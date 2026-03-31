@@ -1,16 +1,17 @@
 # STATUS — Paladin Control Plane
-Updated: 2026-03-30
+Updated: 2026-03-31
 
 ## Current State
-Project bootstrapped. Repository initialized with project context files, CLAUDE.md, subagent definitions, and Claude Code settings. No application code deployed yet. PCP-001 (ntfy), PCP-002 (backend API), and PCP-003 (frontend dashboard) are the first implementation tasks.
+PCP-002 complete. FastAPI backend is live on port 8080 as a systemd user service (paladin-api.service). Endpoints /health, /api/projects, /api/projects/{id}, and /api/events (SSE) are operational. Project scanner reads ~/projects/*/context/ directories with 30-second cache. PCP-003 (frontend) is the logical next step.
 
 ## Backend API
-- **Status:** Not yet deployed
-- **Target:** FastAPI on port 8080, systemd user service
-- **Endpoints planned:** /health, /api/projects, /api/events (SSE)
+- **Status:** Running — paladin-api.service active (running)
+- **Port:** 8080
+- **Endpoints:** /health, /api/projects, /api/projects/{id}, /api/events (SSE + POST)
+- **Service:** systemd user unit, enabled on boot, linger enabled
 
 ## Frontend Dashboard
-- **Status:** Not yet built
+- **Status:** Placeholder index.html only (PCP-003 pending)
 - **Target:** Vanilla JS/HTML/CSS served from /static/
 
 ## ntfy Notifications
@@ -26,9 +27,13 @@ Project bootstrapped. Repository initialized with project context files, CLAUDE.
 - **Preconditions:** PCP-007 complete, manual GitHub OAuth app creation
 
 ## Last Session
-Date: 2026-03-30
+Date: 2026-03-31
 Done:
-- Repository bootstrapped with CLAUDE.md, context files, subagents, settings
+- PCP-002: FastAPI backend with /health, /api/projects, /api/projects/{id}, /api/events
+- Python venv at .venv/, requirements.txt frozen
+- systemd user service paladin-api.service installed and running
+- loginctl enable-linger enabled for boot persistence
+- .gitignore added
 
 ## In Progress
 - Nothing actively in progress
@@ -38,5 +43,4 @@ Done:
 
 ## Next Session Should Start With
 1. PCP-001: Install ntfy notifications (parallel-safe)
-2. PCP-002: Build backend API server read-only Phase 1 (parallel-safe)
-3. PCP-003: Build frontend dashboard read-only Phase 1 (requires PCP-002)
+2. PCP-003: Build frontend dashboard (requires PCP-002 — now complete)

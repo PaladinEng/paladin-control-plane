@@ -3,7 +3,7 @@ Last updated: 2026-03-30
 
 ## Active Sprint
 - [ ] PCP-001: Install ntfy notifications — systemd service, test to iPhone via Tailscale, update Claude Code hooks
-- [ ] PCP-002: Build backend API server (read-only Phase 1) — FastAPI on port 8080, /api/projects, /health, systemd service
+- [x] PCP-002: Build backend API server (read-only Phase 1) — FastAPI on port 8080, /api/projects, /health, systemd service ✅ 2026-03-31
 - [ ] PCP-003: Build frontend dashboard (read-only Phase 1) — home view with project cards, project view with queue/logs, mobile-responsive, SSE
 
 ## Backlog
@@ -22,3 +22,4 @@ Last updated: 2026-03-30
 
 ## Completed
 - [x] ✅ 2026-03-30 Bootstrap: CLAUDE.md, context files, subagents, settings.json, WORKQUEUE-MASTER integration
+- [x] ✅ 2026-03-31 PCP-002: FastAPI backend on port 8080 — /health, /api/projects, /api/projects/{id}, /api/events SSE, systemd user service, boot persistence

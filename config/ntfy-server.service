@@ -1,0 +1,33 @@
+# ntfy-server.service — reference copy of the systemd unit for ntfy on um790pronode1
+#
+# The authoritative unit file is installed at /usr/lib/systemd/system/ntfy.service
+# by the ntfy Debian package. This file is kept here for documentation / IaC reference.
+#
+# Config:  /etc/ntfy/server.yml
+# Cache:   /var/cache/ntfy/cache.db
+# Port:    8090 (http)
+# Base URL: http://10.1.10.50:8090
+#
+# To apply after editing /etc/ntfy/server.yml:
+#   sudo systemctl reload ntfy     # hot-reload log level changes
+#   sudo systemctl restart ntfy    # full restart for other changes
+#
+# To inspect:
+#   systemctl status ntfy
+#   journalctl -u ntfy -f
+
+[Unit]
+Description=ntfy server
+After=network.target
+
+[Service]
+User=ntfy
+Group=ntfy
+ExecStart=/usr/bin/ntfy serve --no-log-dates
+ExecReload=/bin/kill --signal HUP $MAINPID
+Restart=on-failure
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+LimitNOFILE=10000
+
+[Install]
+WantedBy=multi-user.target
