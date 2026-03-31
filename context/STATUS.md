@@ -2,21 +2,29 @@
 Updated: 2026-03-31
 
 ## Current State
-PCP-002 complete. FastAPI backend is live on port 8080 as a systemd user service (paladin-api.service). Endpoints /health, /api/projects, /api/projects/{id}, and /api/events (SSE) are operational. Project scanner reads ~/projects/*/context/ directories with 30-second cache. PCP-003 (frontend) is the logical next step.
+Phase 1 complete. FastAPI backend live on port 8080, frontend dashboard served at /, ntfy notifications running on port 8090. All three services operational as systemd services. Dashboard shows project cards with live status from ~/projects/*/context/ directories. SSE real-time updates functional. Mobile-responsive dark theme UI.
 
 ## Backend API
-- **Status:** Running — paladin-api.service active (running)
+- **Status:** Running — paladin-api.service active (running), 2h+ uptime
 - **Port:** 8080
 - **Endpoints:** /health, /api/projects, /api/projects/{id}, /api/events (SSE + POST)
 - **Service:** systemd user unit, enabled on boot, linger enabled
+- **Last verified:** 2026-03-31
 
 ## Frontend Dashboard
-- **Status:** Placeholder index.html only (PCP-003 pending)
-- **Target:** Vanilla JS/HTML/CSS served from /static/
+- **Status:** Live — served from /static/ via FastAPI
+- **Views:** Home (project cards grid), Project detail (status, queue, sessions, decisions)
+- **Features:** Dark theme, mobile-responsive, SSE auto-refresh, markdown rendering
+- **Last verified:** 2026-03-31
 
 ## ntfy Notifications
-- **Status:** Not yet installed
-- **Target:** systemd service on UM790, push to iOS via Tailscale
+- **Status:** Running — ntfy.service active (running)
+- **Port:** 8090
+- **Version:** 2.14.0
+- **Topics:** paladin-alerts, paladin-sessions, paladin-errors
+- **Config:** /etc/ntfy/server.yml, base-url http://10.1.10.50:8090
+- **Hooks:** Claude Code SessionEnd and SubagentStop post to ntfy via config/ntfy-hooks.sh
+- **Last verified:** 2026-03-31
 
 ## Cloudflare Tunnel
 - **Status:** Not yet configured
@@ -29,11 +37,10 @@ PCP-002 complete. FastAPI backend is live on port 8080 as a systemd user service
 ## Last Session
 Date: 2026-03-31
 Done:
-- PCP-002: FastAPI backend with /health, /api/projects, /api/projects/{id}, /api/events
-- Python venv at .venv/, requirements.txt frozen
-- systemd user service paladin-api.service installed and running
-- loginctl enable-linger enabled for boot persistence
-- .gitignore added
+- Bootstrap: CLAUDE.md, context files, subagents, settings.json
+- PCP-001: ntfy v2.14.0 installed on port 8090, hooks configured
+- PCP-002: FastAPI backend on port 8080, systemd service, project scanner
+- PCP-003: Frontend dashboard with dark theme, project cards, detail views, SSE
 
 ## In Progress
 - Nothing actively in progress
@@ -42,5 +49,5 @@ Done:
 - Nothing blocked
 
 ## Next Session Should Start With
-1. PCP-001: Install ntfy notifications (parallel-safe)
-2. PCP-003: Build frontend dashboard (requires PCP-002 — now complete)
+1. PCP-004: Add prompt input and project chat thread
+2. PCP-005: Build meta-supervisor prompt handler

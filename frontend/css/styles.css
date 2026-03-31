@@ -1,0 +1,937 @@
+/* ============================================================
+   Paladin Control Plane — Stylesheet
+   Dark theme, mobile-first, no build tools
+   ============================================================ */
+
+/* Custom Properties */
+:root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2128;
+    --border: #30363d;
+    --border-subtle: #21262d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #484f58;
+    --accent: #58a6ff;
+    --accent-hover: #79b8ff;
+    --status-green: #3fb950;
+    --status-yellow: #d29922;
+    --status-red: #f85149;
+    --status-gray: #484f58;
+    --status-blue: #58a6ff;
+    --sidebar-width: 220px;
+    --bottom-nav-height: 56px;
+    --radius-card: 8px;
+    --radius-btn: 6px;
+    --spacing: 16px;
+    --font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Mono', Consolas, monospace;
+}
+
+/* Reset & Base */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; }
+
+body {
+    margin: 0;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100%;
+    /* Mobile: content sits above bottom nav */
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
+}
+
+/* ============================================================
+   Layout — Sidebar (desktop) + Bottom Nav (mobile)
+   ============================================================ */
+
+/* Sidebar — hidden on mobile by default */
+#sidebar {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    height: 100%;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    flex-direction: column;
+    z-index: 100;
+    padding-top: env(safe-area-inset-top);
+}
+
+/* Bottom Nav — shown on mobile */
+#bottom-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 100;
+}
+
+.bottom-nav-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 11px;
+    padding: 6px 16px;
+    border-radius: var(--radius-btn);
+    transition: color 0.15s;
+}
+
+.bottom-nav-link svg {
+    width: 22px;
+    height: 22px;
+}
+
+.bottom-nav-link.active,
+.bottom-nav-link:hover {
+    color: var(--accent);
+}
+
+.bottom-nav-status {
+    padding: 6px 12px;
+}
+
+/* Main content area */
+#content {
+    min-height: 100vh;
+    padding: var(--spacing);
+    padding-top: calc(var(--spacing) + env(safe-area-inset-top));
+}
+
+/* Desktop layout */
+@media (min-width: 768px) {
+    body {
+        padding-bottom: 0;
+    }
+
+    #sidebar {
+        display: flex;
+    }
+
+    #bottom-nav {
+        display: none;
+    }
+
+    #content {
+        margin-left: var(--sidebar-width);
+        padding: 24px 32px;
+    }
+}
+
+/* ============================================================
+   Sidebar Internals
+   ============================================================ */
+
+.nav-header {
+    padding: 20px 16px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.nav-header h1 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.3px;
+}
+
+.version {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.nav-links {
+    list-style: none;
+    margin: 0;
+    padding: 8px 8px;
+    flex: 1;
+}
+
+.nav-links li {
+    margin-bottom: 2px;
+}
+
+.nav-link {
+    display: block;
+    padding: 8px 12px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-btn);
+    font-size: 14px;
+    transition: background 0.15s, color 0.15s;
+}
+
+.nav-link:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.nav-link.active {
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--accent);
+}
+
+.nav-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+/* ============================================================
+   Connection Status (SSE indicator)
+   ============================================================ */
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-gray);
+    flex-shrink: 0;
+    transition: background 0.3s;
+}
+
+#sse-status.connected .status-dot,
+#sse-status-mobile.connected .status-dot {
+    background: var(--status-green);
+    box-shadow: 0 0 6px var(--status-green);
+}
+
+#sse-status.disconnected .status-dot,
+#sse-status-mobile.disconnected .status-dot {
+    background: var(--status-red);
+}
+
+#sse-status.connecting .status-dot,
+#sse-status-mobile.connecting .status-dot {
+    background: var(--status-yellow);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
+
+h1, h2, h3, h4 {
+    margin: 0 0 8px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+h1 { font-size: 24px; }
+h2 { font-size: 18px; color: var(--text-primary); }
+h3 { font-size: 15px; color: var(--text-secondary); font-weight: 500; }
+
+p {
+    margin: 0 0 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
+code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: rgba(110, 118, 129, 0.15);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    color: var(--text-primary);
+}
+
+pre {
+    margin: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* ============================================================
+   Page Header
+   ============================================================ */
+
+.page-header {
+    margin-bottom: 24px;
+}
+
+.page-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.page-header .subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ============================================================
+   Cards
+   ============================================================ */
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: var(--spacing);
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.card-clickable {
+    cursor: pointer;
+}
+
+.card-clickable:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.card-clickable:active {
+    background: var(--surface);
+}
+
+/* ============================================================
+   Project Cards Grid
+   ============================================================ */
+
+.projects-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing);
+}
+
+@media (min-width: 600px) {
+    .projects-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+}
+
+.project-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.project-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.project-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.project-card-body {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.project-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ============================================================
+   Status Badges & Indicators
+   ============================================================ */
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.status-badge .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.badge-active {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--status-green);
+    border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.badge-error {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--status-red);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.badge-in-progress {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--status-yellow);
+    border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.badge-idle,
+.badge-inactive {
+    background: rgba(72, 79, 88, 0.3);
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+}
+
+.task-count {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* ============================================================
+   Health Banner
+   ============================================================ */
+
+.health-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(63, 185, 80, 0.08);
+    border: 1px solid rgba(63, 185, 80, 0.2);
+    border-radius: var(--radius-btn);
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+.health-banner .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-green);
+    box-shadow: 0 0 6px var(--status-green);
+    flex-shrink: 0;
+}
+
+.health-banner.error {
+    background: rgba(248, 81, 73, 0.08);
+    border-color: rgba(248, 81, 73, 0.2);
+}
+
+.health-banner.error .dot {
+    background: var(--status-red);
+    box-shadow: 0 0 6px var(--status-red);
+}
+
+.health-banner strong {
+    color: var(--text-primary);
+}
+
+/* ============================================================
+   Loading
+   ============================================================ */
+
+.loading-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 0;
+}
+
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+}
+
+.empty-state h3 {
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+/* ============================================================
+   Project Detail View
+   ============================================================ */
+
+.project-detail {
+    max-width: 1200px;
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 20px;
+    padding: 6px 0;
+    transition: color 0.15s;
+}
+
+.back-link:hover {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.back-link svg {
+    width: 16px;
+    height: 16px;
+}
+
+.project-detail-header {
+    margin-bottom: 24px;
+}
+
+.project-detail-header h2 {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.project-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Two-column layout on desktop */
+.project-detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+@media (min-width: 900px) {
+    .project-detail-body {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 20px;
+    }
+
+    .project-left-panel {
+        flex: 0 0 380px;
+    }
+
+    .project-right-panel {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+.panel-section {
+    margin-bottom: 16px;
+}
+
+.section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.current-state-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+}
+
+/* ============================================================
+   Checklist / Task Queue
+   ============================================================ */
+
+.task-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.task-item input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1.5px solid var(--border);
+    border-radius: 3px;
+    background: transparent;
+    cursor: default;
+    position: relative;
+}
+
+.task-item input[type="checkbox"]:checked {
+    background: var(--status-green);
+    border-color: var(--status-green);
+}
+
+.task-item input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 4px;
+    width: 5px;
+    height: 8px;
+    border: 1.5px solid white;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg);
+}
+
+.task-item .task-text {
+    flex: 1;
+}
+
+.task-item.checked .task-text {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+/* ============================================================
+   Collapsible Sections
+   ============================================================ */
+
+.collapsible {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-btn);
+    overflow: hidden;
+}
+
+.collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    background: var(--bg);
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s;
+}
+
+.collapsible-header:hover {
+    background: var(--surface-hover);
+}
+
+.collapsible-icon {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.2s;
+}
+
+.collapsible.open .collapsible-icon {
+    transform: rotate(90deg);
+}
+
+.collapsible-body {
+    display: none;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--surface);
+}
+
+.collapsible.open .collapsible-body {
+    display: block;
+}
+
+.collapsible-body-inner {
+    padding: 12px;
+}
+
+/* ============================================================
+   Markdown Rendered Content
+   ============================================================ */
+
+.markdown-body {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.markdown-body h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 16px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.markdown-body h2:first-child {
+    margin-top: 0;
+}
+
+.markdown-body h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 12px 0 6px;
+}
+
+.markdown-body ul {
+    margin: 0 0 10px;
+    padding-left: 18px;
+}
+
+.markdown-body li {
+    margin-bottom: 4px;
+}
+
+.markdown-body p {
+    margin: 0 0 10px;
+    color: var(--text-secondary);
+}
+
+.markdown-body strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.markdown-body pre {
+    background: var(--bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.markdown-body code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+/* ============================================================
+   Session Log Viewer
+   ============================================================ */
+
+.session-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.session-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius-btn);
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--font-mono);
+}
+
+.session-item:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-subtle);
+    color: var(--text-primary);
+}
+
+.session-item svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+/* Raw log block */
+.raw-log-block {
+    background: var(--bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 400px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ============================================================
+   Workqueue Raw View
+   ============================================================ */
+
+.workqueue-raw {
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 500px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ============================================================
+   Utility
+   ============================================================ */
+
+.text-muted { color: var(--text-muted); }
+.text-secondary { color: var(--text-secondary); }
+.text-primary { color: var(--text-primary); }
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+
+.mt-1 { margin-top: 4px; }
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Last updated timestamp */
+.last-updated {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+/* Path display */
+.project-path {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+/* Error display */
+.error-banner {
+    padding: 12px 16px;
+    background: rgba(248, 81, 73, 0.1);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    border-radius: var(--radius-btn);
+    color: var(--status-red);
+    font-size: 13px;
+    margin-bottom: 16px;
+}

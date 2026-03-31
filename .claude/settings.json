@@ -18,6 +18,10 @@
           {
             "type": "command",
             "command": "curl -s -X POST http://localhost:8080/api/events -H 'Content-Type: application/json' -d \"{\\\"type\\\":\\\"session_end\\\",\\\"timestamp\\\":\\\"$(date -Iseconds)\\\"}\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "bash /home/paladinrobotics/projects/paladin-control-plane/config/ntfy-hooks.sh session_end 2>/dev/null || true"
           }
         ]
       }
@@ -28,6 +32,10 @@
           {
             "type": "command",
             "command": "curl -s -X POST http://localhost:8080/api/events -H 'Content-Type: application/json' -d \"{\\\"type\\\":\\\"subagent_stop\\\",\\\"name\\\":\\\"$CLAUDE_SUBAGENT_NAME\\\",\\\"timestamp\\\":\\\"$(date -Iseconds)\\\"}\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "bash /home/paladinrobotics/projects/paladin-control-plane/config/ntfy-hooks.sh subagent_stop 2>/dev/null || true"
           }
         ]
       }
@@ -59,7 +67,8 @@
       "Bash(test:*)",
       "Bash(source:*)",
       "Bash(which:*)",
-      "Bash(ntfy:*)"
+      "Bash(ntfy:*)",
+      "Bash(bash:*)"
     ]
   }
 }

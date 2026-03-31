@@ -1,18 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Paladin Control Plane</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 2rem; }
-    h1 { color: #58a6ff; }
-    p  { color: #8b949e; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Paladin Control Plane</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-  <h1>Paladin Control Plane</h1>
-  <p>Backend API is running. Frontend dashboard coming in PCP-003.</p>
-  <p>API endpoints: <a href="/health" style="color:#58a6ff">/health</a> &nbsp; <a href="/api/projects" style="color:#58a6ff">/api/projects</a></p>
+    <nav id="sidebar">
+        <div class="nav-header">
+            <h1>Paladin</h1>
+            <span class="version" id="api-version">...</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#/" class="nav-link active" data-view="home">Dashboard</a></li>
+        </ul>
+        <div class="nav-footer">
+            <div class="connection-status" id="sse-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Connecting...</span>
+            </div>
+        </div>
+    </nav>
+
+    <nav id="bottom-nav">
+        <a href="#/" class="bottom-nav-link active" data-view="home">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            <span>Dashboard</span>
+        </a>
+        <div class="bottom-nav-status" id="sse-status-mobile">
+            <span class="status-dot"></span>
+        </div>
+    </nav>
+
+    <main id="content">
+        <div class="loading-container">
+            <div class="spinner"></div>
+        </div>
+    </main>
+
+    <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
