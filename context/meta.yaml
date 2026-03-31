@@ -1,0 +1,31 @@
+schema_version: "1.0"
+project:
+  id: "paladin-control-plane"
+  name: "Paladin Control Plane"
+  owner: "PaladinEng"
+  entity: "application"
+  status: "active"
+  priority: 2
+  github_repo: "PaladinEng/paladin-control-plane"
+  claude_project: ""
+  created: "2026-03-30"
+  last_updated: "2026-03-30"
+context:
+  status_file: "context/STATUS.md"
+  decisions_file: "context/DECISIONS.md"
+  workqueue_file: "context/WORKQUEUE.md"
+  agents_file: "context/AGENTS.md"
+tags:
+  - fastapi
+  - python
+  - dashboard
+  - ntfy
+  - cloudflare-tunnel
+  - github-oauth
+  - systemd
+dependencies:
+  - homelab-infra
+tools:
+  primary_agent: "claude-code"
+  validation_cmd: "curl -s localhost:8080/health"
+  working_dir: "~/projects/paladin-control-plane"

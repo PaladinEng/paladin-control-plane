@@ -1,0 +1,65 @@
+{
+  "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST http://localhost:8080/api/events -H 'Content-Type: application/json' -d \"{\\\"type\\\":\\\"tool_use\\\",\\\"tool\\\":\\\"bash\\\",\\\"timestamp\\\":\\\"$(date -Iseconds)\\\",\\\"summary\\\":\\\"$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get(\"command\",\"\")[:120])' 2>/dev/null)\\\"}\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST http://localhost:8080/api/events -H 'Content-Type: application/json' -d \"{\\\"type\\\":\\\"session_end\\\",\\\"timestamp\\\":\\\"$(date -Iseconds)\\\"}\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -X POST http://localhost:8080/api/events -H 'Content-Type: application/json' -d \"{\\\"type\\\":\\\"subagent_stop\\\",\\\"name\\\":\\\"$CLAUDE_SUBAGENT_NAME\\\",\\\"timestamp\\\":\\\"$(date -Iseconds)\\\"}\" 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(pip:*)",
+      "Bash(systemctl --user:*)",
+      "Bash(journalctl --user:*)",
+      "Bash(loginctl:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(gh:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(chmod:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(test:*)",
+      "Bash(source:*)",
+      "Bash(which:*)",
+      "Bash(ntfy:*)"
+    ]
+  }
+}
