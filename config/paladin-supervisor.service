@@ -1,0 +1,17 @@
+[Unit]
+Description=Paladin Meta-Supervisor Prompt Handler
+After=paladin-api.service
+Requires=paladin-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paladinrobotics/projects/paladin-control-plane
+ExecStart=/home/paladinrobotics/projects/paladin-control-plane/.venv/bin/python3 supervisor/poll_prompts.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/paladinrobotics/projects/paladin-control-plane/logs/supervisor.log
+StandardError=append:/home/paladinrobotics/projects/paladin-control-plane/logs/supervisor.log
+Environment=PYTHONPATH=/home/paladinrobotics/projects/paladin-control-plane
+
+[Install]
+WantedBy=default.target
