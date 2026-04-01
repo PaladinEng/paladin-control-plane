@@ -3,7 +3,6 @@ Last updated: 2026-04-01 (session 005)
 
 ## Active Sprint
 - [ ] PCP-010: Add project archive and restore — archive/restore buttons, collapsed section on home view
-- [ ] PCP-011: Fix claude CLI PATH in paladin-supervisor.service — add ~/.local/bin to PATH so auto-execution works
 
 ## Backlog
 
@@ -23,3 +22,4 @@ Last updated: 2026-04-01 (session 005)
 - [x] 2026-04-01 PCP-007: Cloudflare Tunnel — cloudflared systemd service, public HTTPS at dashboard.paladinrobotics.com
 - [x] 2026-04-01 PCP-008: GitHub OAuth authentication — login page, OAuth flow, session cookies, Tailscale bypass, auth middleware, security hardening (header spoof prevention, open redirect fix, XSS escaping)
 - [x] 2026-04-01 PCP-009: Overnight meta-supervisor — fixed task.md generation (full objectives, not just acknowledgement), auto-execution via queue-worker-full-pass.sh, overnight.py + systemd timer at 23:00, blast radius enforcement (LOW/NONE only)
+- [x] 2026-04-01 PCP-011: Fix claude CLI PATH — systemd override adds ~/.npm-global/bin to PATH, queue-run-codex.sh uses CLAUDE_BIN fallback, end-to-end test passed

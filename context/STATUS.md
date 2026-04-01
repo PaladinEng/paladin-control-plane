@@ -83,4 +83,3 @@ Done:
 
 ## Next Session Should Start With
 1. PCP-010: Add project archive and restore
-2. Fix claude CLI PATH in paladin-supervisor.service (add ~/.local/bin to PATH in systemd unit)
