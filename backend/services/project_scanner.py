@@ -61,14 +61,14 @@ def _extract_active_tasks(workqueue_md: str) -> list[str]:
 def _determine_status(status_md: str, workqueue_md: Optional[str]) -> str:
     """
     Determine project status string.
-    - 'active'  if workqueue has unchecked Active Sprint items
-    - 'idle'    otherwise
-    - 'error'   if STATUS.md mentions error/failed/broken patterns
+    - 'running'     if CPO active/ queue has a task for this project
+    - 'needs-input' if NOTIFY.md has entries for this project
+    - 'active'      if workqueue has unchecked Active Sprint items
+    - 'idle'        otherwise
+    Status is never derived from keyword scanning STATUS.md content.
     """
-    if status_md:
-        lower = status_md.lower()
-        if any(kw in lower for kw in ["error", "failed", "broken", "critical"]):
-            return "error"
+    # Check CPO active queue for this project
+    # (future enhancement — skip for now)
 
     if workqueue_md:
         active_tasks = _extract_active_tasks(workqueue_md)
