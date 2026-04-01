@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.routes import events, health, projects
+from backend.routes import events, health, projects, threads
 
 app = FastAPI(title="Paladin Control Plane", version="0.1.0")
 
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(projects.router)
 app.include_router(events.router)
+app.include_router(threads.router)
 
 # Serve frontend static files
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"

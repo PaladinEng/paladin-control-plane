@@ -3,10 +3,12 @@
  * Shows status, active task queue, session logs, and raw workqueue.
  */
 
-import { getProject } from '../api.js';
+import { getProject, getThread, postPrompt } from '../api.js';
 
 let sseRefreshHandler = null;
+let sseThreadHandler = null;
 let currentProjectId = null;
+let threadEntryIds = new Set();
 
 // ============================================================
 // Simple Markdown-to-HTML Converter (no library)
@@ -216,16 +218,153 @@ function attachCollapsibles(container) {
 }
 
 // ============================================================
+// Chat Thread Helpers
+// ============================================================
+
+function relativeTime(isoStr) {
+    const now = Date.now();
+    const then = new Date(isoStr).getTime();
+    const diff = Math.max(0, now - then);
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+}
+
+function renderThreadEntry(entry) {
+    const time = relativeTime(entry.timestamp);
+
+    if (entry.type === 'event') {
+        return `<div class="thread-entry thread-event">
+            <span class="thread-event-time">${escapeHtml(time)}</span>
+            <span class="thread-event-text">${escapeHtml(entry.content)}</span>
+        </div>`;
+    }
+
+    if (entry.type === 'system') {
+        return `<div class="thread-entry thread-system">${escapeHtml(entry.content)}</div>`;
+    }
+
+    if (entry.type === 'prompt' && entry.author === 'user') {
+        return `<div class="thread-entry thread-user">
+            <div class="thread-bubble thread-bubble-user">
+                <div class="thread-bubble-header">
+                    <span class="thread-author">You</span>
+                    <span class="thread-time">${escapeHtml(time)}</span>
+                </div>
+                <div class="thread-bubble-content">${escapeHtml(entry.content)}</div>
+            </div>
+        </div>`;
+    }
+
+    // response from supervisor or other
+    const authorLabel = entry.author === 'supervisor' ? 'Supervisor' : escapeHtml(entry.author || 'System');
+    return `<div class="thread-entry thread-supervisor">
+        <div class="thread-bubble thread-bubble-supervisor">
+            <div class="thread-bubble-header">
+                <span class="thread-author">${authorLabel}</span>
+                <span class="thread-time">${escapeHtml(time)}</span>
+            </div>
+            <div class="thread-bubble-content">${escapeHtml(entry.content)}</div>
+        </div>
+    </div>`;
+}
+
+function renderThread(entries) {
+    if (!entries || entries.length === 0) {
+        return '<p class="thread-empty">No messages yet</p>';
+    }
+    return entries.map(renderThreadEntry).join('');
+}
+
+async function loadThread(projectId) {
+    const threadContainer = document.getElementById('thread-messages');
+    if (!threadContainer) return;
+
+    try {
+        const entries = await getThread(projectId);
+        threadEntryIds = new Set(entries.map(e => e.id));
+        threadContainer.innerHTML = renderThread(entries);
+        threadContainer.scrollTop = threadContainer.scrollHeight;
+    } catch (err) {
+        threadContainer.innerHTML = `<p class="text-muted">Failed to load thread.</p>`;
+    }
+}
+
+function setupPromptInput(projectId) {
+    const form = document.getElementById('prompt-form');
+    const textarea = document.getElementById('prompt-textarea');
+    const submitBtn = document.getElementById('prompt-submit');
+    const errorEl = document.getElementById('prompt-error');
+
+    if (!form || !textarea || !submitBtn) return;
+
+    function updateSubmitState() {
+        submitBtn.disabled = !textarea.value.trim();
+    }
+
+    textarea.addEventListener('input', updateSubmitState);
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const content = textarea.value.trim();
+        if (!content) return;
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Sending...';
+        if (errorEl) errorEl.textContent = '';
+
+        // Optimistic update
+        const threadContainer = document.getElementById('thread-messages');
+        const emptyMsg = threadContainer?.querySelector('.thread-empty');
+        if (emptyMsg) emptyMsg.remove();
+
+        const optimisticEntry = {
+            id: 'optimistic-' + Date.now(),
+            timestamp: new Date().toISOString(),
+            type: 'prompt',
+            author: 'user',
+            content: content,
+        };
+        if (threadContainer) {
+            threadContainer.insertAdjacentHTML('beforeend', renderThreadEntry(optimisticEntry));
+            threadContainer.scrollTop = threadContainer.scrollHeight;
+        }
+
+        textarea.value = '';
+
+        try {
+            await postPrompt(projectId, content);
+            submitBtn.textContent = 'Send';
+            updateSubmitState();
+        } catch (err) {
+            if (errorEl) errorEl.textContent = `Error: ${err.message}`;
+            submitBtn.textContent = 'Send';
+            updateSubmitState();
+        }
+    });
+}
+
+// ============================================================
 // Main Render
 // ============================================================
 
 export async function renderProject(content, projectId) {
     currentProjectId = projectId;
+    threadEntryIds = new Set();
 
-    // Clean up previous SSE listener
+    // Clean up previous SSE listeners
     if (sseRefreshHandler) {
         window.removeEventListener('sse:event', sseRefreshHandler);
         sseRefreshHandler = null;
+    }
+    if (sseThreadHandler) {
+        window.removeEventListener('sse:thread_update', sseThreadHandler);
+        sseThreadHandler = null;
     }
 
     content.innerHTML = `
@@ -234,13 +373,21 @@ export async function renderProject(content, projectId) {
 
     await loadProject(content, projectId);
 
-    // Auto-refresh on SSE events
+    // Auto-refresh project data on SSE events
     sseRefreshHandler = () => {
         if (currentProjectId === projectId) {
             loadProject(content, projectId);
         }
     };
     window.addEventListener('sse:event', sseRefreshHandler);
+
+    // Thread-specific SSE handler
+    sseThreadHandler = (e) => {
+        if (currentProjectId === projectId && e.detail?.project_id === projectId) {
+            loadThread(projectId);
+        }
+    };
+    window.addEventListener('sse:thread_update', sseThreadHandler);
 }
 
 async function loadProject(content, projectId) {
@@ -306,6 +453,24 @@ function renderProjectData(content, project) {
             ) : ''}
         </div>`;
 
+    // Chat thread panel
+    const threadPanel = `
+        <div class="thread-panel">
+            <p class="section-title">Chat Thread</p>
+            <div class="thread-messages" id="thread-messages">
+                <div class="loading-container"><div class="spinner"></div></div>
+            </div>
+            <form class="prompt-form" id="prompt-form">
+                <textarea id="prompt-textarea" class="prompt-textarea"
+                    placeholder="Send instruction to supervisor..."
+                    rows="3"></textarea>
+                <div class="prompt-actions">
+                    <span id="prompt-error" class="prompt-error"></span>
+                    <button type="submit" id="prompt-submit" class="prompt-submit" disabled>Send</button>
+                </div>
+            </form>
+        </div>`;
+
     content.innerHTML = `
         <a href="#/" class="back-link">${backArrow()} Back to Dashboard</a>
         <div class="project-detail">
@@ -321,9 +486,12 @@ function renderProjectData(content, project) {
                 ${leftPanel}
                 ${rightPanel}
             </div>
+            ${threadPanel}
         </div>`;
 
     attachCollapsibles(content);
+    loadThread(project.id);
+    setupPromptInput(project.id);
 }
 
 export function cleanupProject() {
@@ -331,5 +499,10 @@ export function cleanupProject() {
         window.removeEventListener('sse:event', sseRefreshHandler);
         sseRefreshHandler = null;
     }
+    if (sseThreadHandler) {
+        window.removeEventListener('sse:thread_update', sseThreadHandler);
+        sseThreadHandler = null;
+    }
     currentProjectId = null;
+    threadEntryIds = new Set();
 }

@@ -22,3 +22,19 @@ export async function getProject(id) {
     if (!res.ok) throw new Error(`Project ${id} not found`);
     return res.json();
 }
+
+export async function getThread(projectId) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/thread`);
+    if (!res.ok) throw new Error(`Failed to load thread: ${res.status}`);
+    return res.json();
+}
+
+export async function postPrompt(projectId, content) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+    });
+    if (!res.ok) throw new Error(`Failed to send prompt: ${res.status}`);
+    return res.json();
+}
