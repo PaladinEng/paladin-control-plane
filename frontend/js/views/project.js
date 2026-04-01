@@ -3,7 +3,7 @@
  * Shows status, active task queue, session logs, and raw workqueue.
  */
 
-import { getProject, getThread, postPrompt } from '../api.js';
+import { getProject, getThread, postPrompt, postResponse } from '../api.js';
 
 let sseRefreshHandler = null;
 let sseThreadHandler = null;
@@ -150,6 +150,7 @@ function statusBadge(status) {
         active:        { cls: 'badge-active',      label: 'Active' },
         error:         { cls: 'badge-error',        label: 'Error' },
         'in-progress': { cls: 'badge-in-progress',  label: 'In Progress' },
+        'needs-input': { cls: 'badge-needs-input',  label: 'Needs Input' },
         idle:          { cls: 'badge-idle',          label: 'Idle' },
         inactive:      { cls: 'badge-inactive',      label: 'Inactive' },
     };
@@ -261,6 +262,41 @@ function renderThreadEntry(entry) {
         </div>`;
     }
 
+    if (entry.type === 'needs-input') {
+        const responded = entry.responded;
+        if (responded) {
+            return `<div class="thread-entry thread-needs-input thread-needs-input-resolved">
+                <div class="thread-bubble thread-bubble-needs-input">
+                    <div class="thread-bubble-header">
+                        <span class="thread-author">Supervisor</span>
+                        <span class="thread-time">${escapeHtml(time)}</span>
+                        <span class="needs-input-resolved-badge">Resolved</span>
+                    </div>
+                    <div class="thread-bubble-content">${escapeHtml(entry.content)}</div>
+                </div>
+            </div>`;
+        }
+        return `<div class="thread-entry thread-needs-input" data-entry-id="${escapeHtml(entry.id)}">
+            <div class="thread-bubble thread-bubble-needs-input">
+                <div class="thread-bubble-header">
+                    <span class="thread-author">Supervisor</span>
+                    <span class="thread-time">${escapeHtml(time)}</span>
+                    <span class="needs-input-badge">Needs your input</span>
+                </div>
+                <div class="thread-bubble-content">${escapeHtml(entry.content)}</div>
+                <div class="needs-input-response-form">
+                    <textarea class="needs-input-textarea"
+                        placeholder="Your response..."
+                        rows="2"></textarea>
+                    <div class="needs-input-actions">
+                        <span class="needs-input-error"></span>
+                        <button class="needs-input-submit" type="button">Respond</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
     // response from supervisor or other
     const authorLabel = entry.author === 'supervisor' ? 'Supervisor' : escapeHtml(entry.author || 'System');
     return `<div class="thread-entry thread-supervisor">
@@ -290,6 +326,7 @@ async function loadThread(projectId) {
         threadEntryIds = new Set(entries.map(e => e.id));
         threadContainer.innerHTML = renderThread(entries);
         threadContainer.scrollTop = threadContainer.scrollHeight;
+        setupNeedsInputHandlers(currentProjectId);
     } catch (err) {
         threadContainer.innerHTML = `<p class="text-muted">Failed to load thread.</p>`;
     }
@@ -346,6 +383,34 @@ function setupPromptInput(projectId) {
             submitBtn.textContent = 'Send';
             updateSubmitState();
         }
+    });
+}
+
+function setupNeedsInputHandlers(projectId) {
+    const thread = document.getElementById('thread-messages');
+    if (!thread) return;
+
+    thread.querySelectorAll('.needs-input-response-form').forEach(form => {
+        const btn = form.querySelector('.needs-input-submit');
+        const textarea = form.querySelector('.needs-input-textarea');
+        const errorEl = form.querySelector('.needs-input-error');
+        if (!btn || !textarea) return;
+
+        btn.addEventListener('click', async () => {
+            const content = textarea.value.trim();
+            if (!content) return;
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            if (errorEl) errorEl.textContent = '';
+            try {
+                await postResponse(projectId, content);
+                await loadThread(projectId);
+            } catch (err) {
+                if (errorEl) errorEl.textContent = `Error: ${err.message}`;
+                btn.disabled = false;
+                btn.textContent = 'Respond';
+            }
+        });
     });
 }
 
@@ -492,6 +557,7 @@ function renderProjectData(content, project) {
     attachCollapsibles(content);
     loadThread(project.id);
     setupPromptInput(project.id);
+    setupNeedsInputHandlers(project.id);
 }
 
 export function cleanupProject() {

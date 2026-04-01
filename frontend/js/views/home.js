@@ -13,6 +13,7 @@ function statusBadge(status) {
         active:      { cls: 'badge-active',      label: 'Active' },
         error:       { cls: 'badge-error',        label: 'Error' },
         'in-progress': { cls: 'badge-in-progress', label: 'In Progress' },
+        'needs-input': { cls: 'badge-needs-input', label: 'Needs Input' },
         idle:        { cls: 'badge-idle',         label: 'Idle' },
         inactive:    { cls: 'badge-inactive',     label: 'Inactive' },
     };

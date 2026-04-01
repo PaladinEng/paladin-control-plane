@@ -1040,6 +1040,102 @@ pre code {
     padding: 4px 0;
 }
 
+/* Needs Input */
+.thread-bubble-needs-input {
+    border-left: 3px solid var(--status-yellow);
+    background: rgba(210, 153, 34, 0.08);
+    border-radius: 10px 10px 10px 2px;
+}
+
+.thread-needs-input-resolved .thread-bubble-needs-input {
+    opacity: 0.7;
+}
+
+.needs-input-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(210, 153, 34, 0.2);
+    color: var(--status-yellow);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.needs-input-resolved-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--status-green);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.needs-input-response-form {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.needs-input-textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: 13px;
+    resize: vertical;
+    font-family: var(--font);
+    line-height: 1.5;
+}
+
+.needs-input-textarea::placeholder {
+    color: var(--text-muted);
+}
+
+.needs-input-textarea:focus {
+    outline: none;
+    border-color: var(--status-yellow);
+}
+
+.needs-input-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.needs-input-submit {
+    padding: 6px 16px;
+    border-radius: var(--radius-btn);
+    border: none;
+    background: var(--status-yellow);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.needs-input-submit:hover { opacity: 0.85; }
+.needs-input-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.needs-input-error {
+    font-size: 12px;
+    color: var(--status-red);
+    flex: 1;
+}
+
+.badge-needs-input {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--status-yellow);
+    border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
 /* Prompt Input */
 .prompt-form {
     display: flex;

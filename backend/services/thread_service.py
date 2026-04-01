@@ -132,3 +132,83 @@ def mark_prompt_handled(project_id: str, prompt_id: str) -> bool:
     if found:
         _write_queue(project_id, queue)
     return found
+
+
+def add_needs_input_request(project_id: str, question: str, task_id: str) -> dict:
+    """
+    Add a needs-input entry to the thread.
+    Signals the dashboard to show a response input.
+    """
+    entry = {
+        "id": str(uuid.uuid4()),
+        "timestamp": _now_iso(),
+        "type": "needs-input",
+        "author": "supervisor",
+        "project_id": project_id,
+        "content": question,
+        "task_id": task_id,
+        "responded": False,
+    }
+    thread_file = _project_dir(project_id) / "thread.jsonl"
+    with open(thread_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+    return entry
+
+
+def get_pending_input_request(project_id: str) -> dict | None:
+    """Return the most recent unresponded needs-input entry, or None."""
+    entries = get_thread(project_id)
+    for entry in reversed(entries):
+        if entry.get("type") == "needs-input" and not entry.get("responded", False):
+            return entry
+    return None
+
+
+def submit_response(project_id: str, entry_id: str, response_content: str) -> dict:
+    """
+    Mark a needs-input entry as responded and write the response file.
+    Response written to: ~/paladin-control/data/projects/{project_id}/responses/{entry_id}.json
+    """
+    # Write response file for the waiting task to read
+    responses_dir = _project_dir(project_id) / "responses"
+    responses_dir.mkdir(exist_ok=True)
+    response_data = {
+        "entry_id": entry_id,
+        "response": response_content,
+        "timestamp": _now_iso(),
+    }
+    (responses_dir / f"{entry_id}.json").write_text(
+        json.dumps(response_data, indent=2), encoding="utf-8"
+    )
+
+    # Mark the needs-input entry as responded in thread.jsonl
+    thread_file = _project_dir(project_id) / "thread.jsonl"
+    if thread_file.exists():
+        lines = thread_file.read_text(encoding="utf-8").splitlines()
+        updated_lines = []
+        for line in lines:
+            try:
+                entry = json.loads(line)
+                if entry.get("id") == entry_id:
+                    entry["responded"] = True
+                updated_lines.append(json.dumps(entry))
+            except json.JSONDecodeError:
+                updated_lines.append(line)
+        thread_file.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+
+    # Add user response entry to thread
+    response_entry = add_thread_entry(
+        project_id, "response", "user", response_content
+    )
+    return response_entry
+
+
+def get_response_file(project_id: str, entry_id: str) -> dict | None:
+    """Read a response file. Returns None if not yet written."""
+    response_file = _project_dir(project_id) / "responses" / f"{entry_id}.json"
+    if not response_file.exists():
+        return None
+    try:
+        return json.loads(response_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None

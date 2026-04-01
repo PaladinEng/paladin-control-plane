@@ -58,17 +58,23 @@ def _extract_active_tasks(workqueue_md: str) -> list[str]:
     return tasks
 
 
-def _determine_status(status_md: str, workqueue_md: Optional[str]) -> str:
+def _determine_status(
+    status_md: str, workqueue_md: Optional[str], project_id: str = ""
+) -> str:
     """
-    Determine project status string.
-    - 'running'     if CPO active/ queue has a task for this project
-    - 'needs-input' if NOTIFY.md has entries for this project
+    Determine project status:
+    - 'needs-input' if there is an unresponded needs-input entry in thread
     - 'active'      if workqueue has unchecked Active Sprint items
     - 'idle'        otherwise
-    Status is never derived from keyword scanning STATUS.md content.
     """
-    # Check CPO active queue for this project
-    # (future enhancement — skip for now)
+    if project_id:
+        try:
+            from backend.services.thread_service import get_pending_input_request
+
+            if get_pending_input_request(project_id) is not None:
+                return "needs-input"
+        except Exception:
+            pass
 
     if workqueue_md:
         active_tasks = _extract_active_tasks(workqueue_md)
@@ -135,7 +141,7 @@ def _scan_project(project_dir: Path) -> Optional[ProjectDetail]:
         id=project_id,
         name=project_name,
         path=str(project_dir),
-        status=_determine_status(status_raw, workqueue_raw),
+        status=_determine_status(status_raw, workqueue_raw, project_id),
         current_state=_extract_current_state(status_raw) if status_raw else "",
         active_tasks=_extract_active_tasks(workqueue_raw) if workqueue_raw else [],
         last_updated=last_updated,

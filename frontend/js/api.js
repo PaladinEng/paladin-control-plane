@@ -29,6 +29,19 @@ export async function getThread(projectId) {
     return res.json();
 }
 
+export async function postResponse(projectId, content) {
+    const res = await fetch(
+        `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/respond`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+        }
+    );
+    if (!res.ok) throw new Error(`Failed to submit response: ${res.status}`);
+    return res.json();
+}
+
 export async function postPrompt(projectId, content) {
     const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/prompt`, {
         method: 'POST',

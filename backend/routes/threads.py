@@ -12,12 +12,21 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.services.thread_service import add_prompt, get_thread
+from backend.services.thread_service import (
+    add_prompt,
+    get_pending_input_request,
+    get_thread,
+    submit_response,
+)
 
 router = APIRouter(prefix="/api/projects")
 
 
 class PromptRequest(BaseModel):
+    content: str
+
+
+class RespondRequest(BaseModel):
     content: str
 
 
@@ -34,17 +43,20 @@ async def submit_prompt(project_id: str, body: PromptRequest, request: Request):
         raise HTTPException(status_code=400, detail="Content must not be empty")
 
     entry = add_prompt(project_id, body.content.strip())
+    _broadcast_sse("thread_update", project_id)
+    return entry
 
-    # Broadcast SSE event for thread update
-    # Import here to avoid circular imports
+
+def _broadcast_sse(event_type: str, project_id: str) -> None:
+    """Broadcast an SSE event to all subscribers."""
     from backend.routes.events import _subscribers
 
     payload = json.dumps({
-        "type": "thread_update",
+        "type": event_type,
         "project_id": project_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    sse_message = f"event: thread_update\ndata: {payload}\n\n"
+    sse_message = f"event: {event_type}\ndata: {payload}\n\n"
 
     dead: list[asyncio.Queue] = []
     for q in _subscribers:
@@ -58,4 +70,29 @@ async def submit_prompt(project_id: str, body: PromptRequest, request: Request):
         except ValueError:
             pass
 
-    return entry
+
+@router.post("/{project_id}/respond")
+async def submit_response_endpoint(
+    project_id: str, body: RespondRequest, request: Request
+):
+    """Submit a response to a paused needs-input request."""
+    if not body.content.strip():
+        raise HTTPException(status_code=400, detail="Response must not be empty")
+
+    pending = get_pending_input_request(project_id)
+    if pending is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No pending needs-input request for this project",
+        )
+
+    response_entry = submit_response(project_id, pending["id"], body.content.strip())
+
+    # Invalidate project scanner cache so status updates
+    from backend.services.project_scanner import invalidate_cache
+    invalidate_cache()
+
+    _broadcast_sse("thread_update", project_id)
+    _broadcast_sse("status_update", project_id)
+
+    return response_entry
