@@ -1,21 +1,28 @@
 # STATUS — Paladin Control Plane
-Updated: 2026-03-31
+Updated: 2026-04-01
 
 ## Current State
-Phase 1 complete. FastAPI backend live on port 8080, frontend dashboard served at /, ntfy notifications running on port 8090. All three services operational as systemd services. Dashboard shows project cards with live status from ~/projects/*/context/ directories. SSE real-time updates functional. Mobile-responsive dark theme UI.
+Phase 2 complete. FastAPI backend live on port 8080 with chat thread API, frontend dashboard served at / with prompt input UI, ntfy notifications on port 8090, meta-supervisor polling prompt queues every 60s. All four services operational as systemd services. Dashboard prompt-to-CPO pipeline validated end-to-end.
 
 ## Backend API
-- **Status:** Running — paladin-api.service active (running), 2h+ uptime
+- **Status:** Running — paladin-api.service active (running)
 - **Port:** 8080
-- **Endpoints:** /health, /api/projects, /api/projects/{id}, /api/events (SSE + POST)
+- **Endpoints:** /health, /api/projects, /api/projects/{id}, /api/events (SSE + POST), /api/projects/{id}/thread, /api/projects/{id}/prompt
 - **Service:** systemd user unit, enabled on boot, linger enabled
-- **Last verified:** 2026-03-31
+- **Last verified:** 2026-04-01
 
 ## Frontend Dashboard
 - **Status:** Live — served from /static/ via FastAPI
-- **Views:** Home (project cards grid), Project detail (status, queue, sessions, decisions)
-- **Features:** Dark theme, mobile-responsive, SSE auto-refresh, markdown rendering
-- **Last verified:** 2026-03-31
+- **Views:** Home (project cards grid), Project detail (status, queue, sessions, decisions, chat thread, prompt input)
+- **Features:** Dark theme, mobile-responsive, SSE auto-refresh, markdown rendering, chat thread with prompt submission
+- **Last verified:** 2026-04-01
+
+## Meta-Supervisor
+- **Status:** Running — paladin-supervisor.service active (running)
+- **Behavior:** Polls ~/paladin-control/data/projects/*/prompt-queue.json every 60s
+- **Routing:** Unhandled prompts → CPO task in ~/dev/queue/pending/
+- **Logs:** logs/supervisor.log
+- **Last verified:** 2026-04-01
 
 ## ntfy Notifications
 - **Status:** Running — ntfy.service active (running)
@@ -24,7 +31,7 @@ Phase 1 complete. FastAPI backend live on port 8080, frontend dashboard served a
 - **Topics:** paladin-alerts, paladin-sessions, paladin-errors
 - **Config:** /etc/ntfy/server.yml, base-url http://10.1.10.50:8090
 - **Hooks:** Claude Code SessionEnd and SubagentStop post to ntfy via config/ntfy-hooks.sh
-- **Last verified:** 2026-03-31
+- **Last verified:** 2026-04-01
 
 ## Cloudflare Tunnel
 - **Status:** Not yet configured
@@ -35,12 +42,12 @@ Phase 1 complete. FastAPI backend live on port 8080, frontend dashboard served a
 - **Preconditions:** PCP-007 complete, manual GitHub OAuth app creation
 
 ## Last Session
-Date: 2026-03-31
+Date: 2026-04-01
 Done:
-- Bootstrap: CLAUDE.md, context files, subagents, settings.json
-- PCP-001: ntfy v2.14.0 installed on port 8090, hooks configured
-- PCP-002: FastAPI backend on port 8080, systemd service, project scanner
-- PCP-003: Frontend dashboard with dark theme, project cards, detail views, SSE
+- Scanner bug fix: removed keyword-based status detection, use workqueue state only
+- PCP-004: Chat thread backend (thread.jsonl + prompt-queue.json) + frontend (chat bubbles, prompt textarea)
+- PCP-005: Meta-supervisor prompt handler (polls queues, creates CPO tasks, systemd service)
+- End-to-end test: dashboard prompt → supervisor → CPO task validated
 
 ## In Progress
 - Nothing actively in progress
@@ -49,5 +56,5 @@ Done:
 - Nothing blocked
 
 ## Next Session Should Start With
-1. PCP-004: Add prompt input and project chat thread
-2. PCP-005: Build meta-supervisor prompt handler
+1. PCP-006: Add paused/needs-input handling
+2. PCP-007: Configure Cloudflare Tunnel (requires manual Cloudflare setup)
