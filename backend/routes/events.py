@@ -9,11 +9,14 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
+import re
 import subprocess
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+_SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 router = APIRouter()
 
@@ -100,6 +103,9 @@ async def publish_event(request: Request):
 @router.post("/api/projects/{project_id}/needs-input")
 async def request_input(project_id: str, body: NeedsInputRequest):
     """Signal that a task needs user input before continuing."""
+    if not _SLUG_RE.match(project_id):
+        raise HTTPException(status_code=400, detail="Invalid project_id")
+
     from backend.services.thread_service import add_needs_input_request
     from backend.services.project_scanner import invalidate_cache
 

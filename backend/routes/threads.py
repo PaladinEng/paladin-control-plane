@@ -7,10 +7,13 @@ POST /api/projects/{id}/prompt  — submit a user prompt
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+_SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 from backend.services.thread_service import (
     add_prompt,
@@ -30,15 +33,22 @@ class RespondRequest(BaseModel):
     content: str
 
 
+def _validate_project_id(project_id: str) -> None:
+    if not _SLUG_RE.match(project_id):
+        raise HTTPException(status_code=400, detail="Invalid project_id")
+
+
 @router.get("/{project_id}/thread")
 async def list_thread(project_id: str):
     """Return thread entries for a project (newest last, max 100)."""
+    _validate_project_id(project_id)
     return get_thread(project_id)
 
 
 @router.post("/{project_id}/prompt")
 async def submit_prompt(project_id: str, body: PromptRequest, request: Request):
     """Submit a user prompt — adds to thread and prompt queue."""
+    _validate_project_id(project_id)
     if not body.content.strip():
         raise HTTPException(status_code=400, detail="Content must not be empty")
 
@@ -76,6 +86,7 @@ async def submit_response_endpoint(
     project_id: str, body: RespondRequest, request: Request
 ):
     """Submit a response to a paused needs-input request."""
+    _validate_project_id(project_id)
     if not body.content.strip():
         raise HTTPException(status_code=400, detail="Response must not be empty")
 
