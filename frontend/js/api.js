@@ -42,6 +42,12 @@ export async function postResponse(projectId, content) {
     return res.json();
 }
 
+export async function getAuthStatus() {
+    const res = await fetch(`${API_BASE}/auth/status`);
+    if (!res.ok) return { authenticated: false };
+    return res.json();
+}
+
 export async function postPrompt(projectId, content) {
     const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/prompt`, {
         method: 'POST',

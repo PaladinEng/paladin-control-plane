@@ -8,8 +8,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse as StarletteJSONResponse
+from starlette.responses import RedirectResponse as StarletteRedirectResponse
 
-from backend.routes import events, health, projects, threads
+from backend.routes import auth, events, health, projects, threads
+from backend.services.auth_service import is_authenticated
 
 app = FastAPI(title="Paladin Control Plane", version="0.1.0")
 
@@ -22,7 +26,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auth middleware — runs after CORS (added after CORS so it executes first on inbound)
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+
+        # Always allow: auth routes, health check, static assets
+        if (path.startswith("/auth/")
+                or path == "/health"
+                or path.startswith("/static/")):
+            return await call_next(request)
+
+        # Check authentication
+        if not is_authenticated(request):
+            if path.startswith("/api/"):
+                return StarletteJSONResponse(
+                    {"detail": "Not authenticated"},
+                    status_code=401,
+                )
+            return StarletteRedirectResponse(
+                url=f"/auth/login?next={request.url.path}",
+            )
+
+        return await call_next(request)
+
+app.add_middleware(AuthMiddleware)
+
 # Include routers
+app.include_router(auth.router)
 app.include_router(health.router)
 app.include_router(projects.router)
 app.include_router(events.router)

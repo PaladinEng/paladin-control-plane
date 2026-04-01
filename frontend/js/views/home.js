@@ -4,7 +4,7 @@
  * Auto-refreshes on SSE events.
  */
 
-import { getProjects, getHealth } from '../api.js';
+import { getProjects, getHealth, getAuthStatus } from '../api.js';
 
 let sseRefreshHandler = null;
 
@@ -78,6 +78,23 @@ async function renderHealthBanner(container) {
     }
 }
 
+async function renderAuthIndicator(el) {
+    try {
+        const status = await getAuthStatus();
+        if (!status.authenticated) {
+            el.innerHTML = '';
+            return;
+        }
+        if (status.method === 'tailscale') {
+            el.textContent = 'Local access';
+        } else {
+            el.innerHTML = `${escapeHtml(status.user)} · <a href="/auth/logout" style="color:#94a3b8">Sign out</a>`;
+        }
+    } catch {
+        // Silently ignore
+    }
+}
+
 export async function renderHome(content) {
     // Remove previous SSE listener if any
     if (sseRefreshHandler) {
@@ -89,14 +106,16 @@ export async function renderHome(content) {
         <div class="page-header">
             <h2>Dashboard</h2>
             <p class="subtitle">All monitored projects</p>
+            <span id="auth-indicator" class="text-muted" style="margin-left:auto;font-size:12px"></span>
         </div>
         <div id="health-banner-container"></div>
         <div id="projects-container">
             <div class="loading-container"><div class="spinner"></div></div>
         </div>`;
 
-    // Load health banner (async, non-blocking)
+    // Load health banner and auth indicator (async, non-blocking)
     renderHealthBanner(document.getElementById('health-banner-container'));
+    renderAuthIndicator(document.getElementById('auth-indicator'));
 
     // Load projects
     await loadProjects();
