@@ -1,0 +1,10 @@
+[Unit]
+Description=Paladin Overnight Run Timer
+Requires=paladin-overnight.service
+
+[Timer]
+OnCalendar=*-*-* 23:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

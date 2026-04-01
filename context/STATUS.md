@@ -1,8 +1,8 @@
 # STATUS — Paladin Control Plane
-Updated: 2026-04-01
+Updated: 2026-04-01 (session 005)
 
 ## Current State
-Phase 4 complete. FastAPI backend on port 8080 with GitHub OAuth authentication for public access via Cloudflare Tunnel. Tailscale and localhost access bypass auth. Chat thread API with needs-input/respond flow, frontend dashboard with prompt input UI, ntfy notifications on port 8090 with deep links, meta-supervisor polling prompt queues every 60s. All services operational.
+Phase 5 complete. FastAPI backend on port 8080 with GitHub OAuth authentication for public access via Cloudflare Tunnel. Tailscale and localhost access bypass auth. Chat thread API with needs-input/respond flow, frontend dashboard with prompt input UI, ntfy notifications on port 8090 with deep links. Meta-supervisor polls prompt queues every 60s, creates CPO tasks with full objectives (not just acknowledgements), and auto-executes them via queue-worker-full-pass.sh. Overnight timer runs at 23:00 to process P1 overnight-ready tasks. All services operational.
 
 ## Backend API
 - **Status:** Running — paladin-api.service active (running)
@@ -37,9 +37,20 @@ Phase 4 complete. FastAPI backend on port 8080 with GitHub OAuth authentication 
 ## Meta-Supervisor
 - **Status:** Running — paladin-supervisor.service active (running)
 - **Behavior:** Polls ~/paladin-control/data/projects/*/prompt-queue.json every 60s
-- **Routing:** Unhandled prompts → CPO task in ~/dev/queue/pending/
+- **Routing:** Unhandled prompts → CPO task in ~/dev/queue/pending/ → auto-execute via queue-worker-full-pass.sh
+- **Task.md:** Full objective from prompt content, acceptance criteria require actual execution (not just acknowledgement)
+- **Execution:** Automatic — 30-minute timeout per task, success/failure logged to thread and SSE
 - **Helper:** supervisor/request_input.py — pauseable Claude Code tasks can request input and wait
 - **Logs:** logs/supervisor.log
+- **Last verified:** 2026-04-01
+
+## Overnight Timer
+- **Status:** Active — paladin-overnight.timer enabled
+- **Schedule:** Daily at 23:00 UTC
+- **Script:** supervisor/overnight.py
+- **Behavior:** Reads ~/projects/WORKQUEUE-MASTER.md P1 section, executes overnight-ready tasks with blast-radius LOW/NONE
+- **Safety:** MEDIUM/HIGH blast-radius tasks are skipped with ntfy notification + NOTIFY.md entry
+- **Logs:** logs/overnight.log
 - **Last verified:** 2026-04-01
 
 ## ntfy Notifications
@@ -56,11 +67,13 @@ Phase 4 complete. FastAPI backend on port 8080 with GitHub OAuth authentication 
 - **Auth:** GitHub OAuth required (Tailscale bypass for internal access)
 
 ## Last Session
-Date: 2026-04-01
+Date: 2026-04-01 (session 005)
 Done:
-- PCP-008: GitHub OAuth authentication — login page, OAuth flow, session cookies, Tailscale bypass, auth middleware, frontend auth indicator
-- Fixed: localhost (127.0.0.1) added to trusted IPs for supervisor/service-to-service calls
-- Deps: httpx and itsdangerous installed in venv
+- PCP-009: Automatic task execution + overnight timer
+- Fixed: task.md generation — prompts now execute fully instead of just acknowledging
+- poll_prompts.py auto-executes CPO tasks after creation
+- overnight.py + systemd timer for nightly P1 task execution
+- Blast radius enforcement: only LOW/NONE tasks run overnight
 
 ## In Progress
 - Nothing actively in progress
@@ -69,5 +82,5 @@ Done:
 - Nothing blocked
 
 ## Next Session Should Start With
-1. PCP-009: Build overnight meta-supervisor (requires supervised daytime first run)
-2. PCP-010: Add project archive and restore
+1. PCP-010: Add project archive and restore
+2. Fix claude CLI PATH in paladin-supervisor.service (add ~/.local/bin to PATH in systemd unit)

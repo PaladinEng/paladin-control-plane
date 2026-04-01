@@ -10,6 +10,7 @@ Runs as a systemd user service (paladin-supervisor.service).
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -36,6 +37,9 @@ API_BASE = "http://localhost:8080"
 # Project ID → local project path mapping
 PROJECTS_ROOT = Path.home() / "projects"
 
+# Strict project_id validation — prevents path traversal
+_PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+
 # Set up logging
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -54,23 +58,28 @@ def _now_iso() -> str:
 
 
 def _get_project_path(project_id: str) -> str:
-    """Resolve the local path for a project."""
-    project_dir = PROJECTS_ROOT / project_id
-    if project_dir.exists():
-        return str(project_dir)
-    return str(project_dir)
+    """Look up project local_path from the API, fall back to ~/projects/{id}."""
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(
+            f"{API_BASE}/api/projects/{project_id}", timeout=5
+        ) as resp:
+            data = json.loads(resp.read())
+            return data.get("path", str(PROJECTS_ROOT / project_id))
+    except Exception:
+        return str(PROJECTS_ROOT / project_id)
 
 
-def _post_event(project_id: str, prompt_id: str, task_id: str) -> None:
-    """Post a prompt_routed event to the API."""
+def _post_event(project_id: str, event_type: str, data: dict = None) -> None:
+    """Post an event to the API for SSE broadcast."""
     try:
         import urllib.request
 
         payload = json.dumps({
-            "type": "prompt_routed",
             "project_id": project_id,
-            "prompt_id": prompt_id,
-            "task_id": task_id,
+            "event": event_type,
+            **(data or {}),
         }).encode("utf-8")
         req = urllib.request.Request(
             f"{API_BASE}/api/events",
@@ -83,6 +92,56 @@ def _post_event(project_id: str, prompt_id: str, task_id: str) -> None:
         logger.warning("Failed to post event to API: %s", e)
 
 
+def _execute_cpo_task(project_id: str, task_name: str) -> bool:
+    """
+    Run queue-worker-full-pass.sh to execute the pending CPO task.
+    Runs in a subprocess. Returns True if execution completed successfully.
+    """
+    import subprocess
+
+    script = (Path.home() / "projects" / "codex-project-orchestrator"
+              / "scripts" / "queue-worker-full-pass.sh")
+
+    if not script.exists():
+        logger.error("queue-worker-full-pass.sh not found at %s", script)
+        return False
+
+    logger.info("Executing CPO task %s via queue-worker-full-pass.sh", task_name)
+
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            ["bash", str(script)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(script.parent.parent),
+        )
+        stdout, stderr = proc.communicate(timeout=1800)  # 30 minute timeout
+        if proc.returncode == 0:
+            logger.info("Task %s completed successfully", task_name)
+            if stdout:
+                logger.info("Output (last 500 chars): %s", stdout[-500:])
+            return True
+        else:
+            logger.error("Task %s failed (exit %d)", task_name, proc.returncode)
+            if stderr:
+                logger.error("stderr: %s", stderr[-500:])
+            return False
+    except subprocess.TimeoutExpired:
+        logger.error("Task %s timed out after 30 minutes", task_name)
+        if proc:
+            proc.kill()
+            proc.wait()
+        return False
+    except Exception as e:
+        logger.error("Task %s execution error: %s", task_name, e)
+        if proc:
+            proc.kill()
+            proc.wait()
+        return False
+
+
 def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
     """Create a CPO task directory and return the task_id."""
     task_id = f"{project_id}-{prompt_id[:8]}"
@@ -90,9 +149,9 @@ def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
     task_dir.mkdir(parents=True, exist_ok=True)
 
     project_path = _get_project_path(project_id)
-    data_path = DATA_ROOT / project_id
+    thread_jsonl = DATA_ROOT / project_id / "thread.jsonl"
 
-    # Write task.md
+    # Write task.md with full objective and proper acceptance criteria
     task_md = f"""# Dashboard prompt — {project_id}
 
 ## Project path
@@ -101,14 +160,33 @@ def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
 ## Objective
 {content}
 
+## Execution context
+You are Claude Code running autonomously via the Paladin Control Plane
+dashboard. The user submitted this prompt expecting it to be fully executed.
+Read the project CLAUDE.md for full infrastructure context and available
+subagents. Use subagents where appropriate.
+
+When complete:
+
+Write a summary of what was done to:
+{thread_jsonl}
+as a JSON entry: {{"id": "<uuid>", "timestamp": "<iso>", "type": "response",
+"author": "supervisor", "project_id": "{project_id}",
+"content": "<summary of what was accomplished>"}}
+Append this as a single line to the file.
+Exit cleanly.
+
 ## Constraints
-Follow project CLAUDE.md. Write response to
-{data_path}/thread.jsonl
-as a thread entry with type=response, author=supervisor.
-Exit cleanly when done.
+- Follow project CLAUDE.md architecture invariants
+- Do not make changes outside the project directory without explicit
+  instruction in the objective above
+- Write exactly one response entry to thread.jsonl when done
 
 ## Acceptance criteria
-Response written to thread.jsonl
+- The objective above has been fully executed
+- A response entry has been written to thread.jsonl summarising
+  what was accomplished
+- All changes committed if the objective involved file modifications
 """
     (task_dir / "task.md").write_text(task_md, encoding="utf-8")
 
@@ -134,25 +212,41 @@ def process_prompt(project_id: str, prompt: dict) -> None:
 
     logger.info("Processing prompt %s for project %s", prompt_id[:8], project_id)
 
-    # Mark as handled immediately to prevent double-processing
-    mark_prompt_handled(project_id, prompt_id)
-
     # Write routing response to thread
     add_thread_entry(
         project_id,
         "event",
         "system",
-        f"Supervisor received: routing to CPO...",
+        "Supervisor received: routing to CPO...",
     )
 
-    # Create CPO task
+    # Create CPO task first, then mark handled (so prompt isn't lost on failure)
     task_id = _create_cpo_task(project_id, prompt_id, content)
+    mark_prompt_handled(project_id, prompt_id)
     logger.info("Created CPO task %s for prompt %s", task_id, prompt_id[:8])
 
     # Post event to API
-    _post_event(project_id, prompt_id, task_id)
+    _post_event(project_id, "prompt_routed", {
+        "prompt_id": prompt_id,
+        "task_id": task_id,
+    })
 
     logger.info("Routed prompt %s → task %s", prompt_id[:8], task_id)
+
+    # Execute the task automatically
+    success = _execute_cpo_task(project_id, task_id)
+    if success:
+        add_thread_entry(
+            project_id, "event", "system",
+            f"Task {task_id} completed successfully",
+        )
+        _post_event(project_id, "task_completed", {"task": task_id})
+    else:
+        add_thread_entry(
+            project_id, "event", "system",
+            f"Task {task_id} failed or timed out — check CPO logs",
+        )
+        _post_event(project_id, "task_failed", {"task": task_id})
 
 
 def poll_once() -> int:
@@ -166,6 +260,9 @@ def poll_once() -> int:
             continue
 
         project_id = project_dir.name
+        if not _PROJECT_ID_RE.match(project_id):
+            logger.warning("Skipping invalid project_id: %s", project_id)
+            continue
         try:
             prompts = get_prompt_queue(project_id)
             for prompt in prompts:

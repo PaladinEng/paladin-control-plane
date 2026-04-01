@@ -1,0 +1,14 @@
+[Unit]
+Description=Paladin Overnight Meta-Supervisor Run
+After=paladin-api.service paladin-supervisor.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/paladinrobotics/projects/paladin-control-plane
+ExecStart=/home/paladinrobotics/projects/paladin-control-plane/.venv/bin/python3 supervisor/overnight.py
+StandardOutput=append:/home/paladinrobotics/projects/paladin-control-plane/logs/overnight.log
+StandardError=append:/home/paladinrobotics/projects/paladin-control-plane/logs/overnight.log
+Environment=PYTHONPATH=/home/paladinrobotics/projects/paladin-control-plane
+
+[Install]
+WantedBy=default.target
