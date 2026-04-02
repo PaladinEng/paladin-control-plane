@@ -1,5 +1,5 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02T00:15Z
+Last updated: 2026-04-02T00:21Z
 
 ## Active Sprint
 
@@ -53,6 +53,10 @@ done-when:
 ## Blocked
 - Nothing blocked
 
+## Known Issues
+- **cloudflared service location**: Runs as system service at `/etc/systemd/system/cloudflared.service` rather than user service. Works correctly but differs from initial documentation assuming user-only services.
+- **queue-run-codex.sh location**: Located at `~/dev/projects/codex-project-orchestrator/scripts/queue-run-codex.sh`, not `~/dev/scripts/`. Update any documentation or scripts that reference the old path.
+
 ## Completed
 - [x] 2026-03-30 Bootstrap: CLAUDE.md, context files, subagents, settings.json, WORKQUEUE-MASTER integration
 - [x] 2026-03-31 PCP-001: ntfy v2.14.0 on port 8090 — paladin-alerts/sessions/errors topics, Claude Code hooks configured
@@ -64,6 +68,6 @@ done-when:
 - [x] 2026-04-01 PCP-007: Cloudflare Tunnel — cloudflared systemd service, public HTTPS at dashboard.paladinrobotics.com
 - [x] 2026-04-01 PCP-008: GitHub OAuth authentication — login page, OAuth flow, session cookies, Tailscale bypass, auth middleware, security hardening (header spoof prevention, open redirect fix, XSS escaping)
 - [x] 2026-04-01 PCP-009: Overnight meta-supervisor — fixed task.md generation (full objectives, not just acknowledgement), auto-execution via queue-worker-full-pass.sh, overnight.py + systemd timer at 23:00, blast radius enforcement (LOW/NONE only)
+- [x] 2026-04-01 PCP-010: Add project archive and restore — archive/restore buttons, collapsed section on home view
 - [x] 2026-04-01 PCP-011: Fix claude CLI PATH — systemd override adds ~/.npm-global/bin to PATH, queue-run-codex.sh uses CLAUDE_BIN fallback, end-to-end test passed
-- [x] 2026-04-01 PCP-010: Add project archive and restore ✅ — archive/restore buttons, collapsed section on home view
-- [x] 2026-04-02 PCP-011: Morning briefing ✅ superseded — functionality covered by PCP-009 overnight timer and ntfy notifications
+- [x] 2026-04-02 PCP-011a: Morning briefing (superseded by PCP-009) — functionality covered by PCP-009 overnight timer and ntfy notifications
