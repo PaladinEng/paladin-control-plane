@@ -38,7 +38,7 @@ HANG_CHECK_INTERVAL = 60  # check every 60 seconds
 # Configuration
 DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
 QUEUE_ROOT = Path.home() / "dev" / "queue" / "pending"
-POLL_INTERVAL = 60  # seconds
+POLL_INTERVAL = 30  # seconds
 PID_FILE = Path.home() / "paladin-control" / "supervisor.pid"
 LOG_FILE = PROJECT_ROOT / "logs" / "supervisor.log"
 API_BASE = "http://localhost:8080"

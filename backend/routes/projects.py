@@ -1,4 +1,5 @@
 import re
+from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -133,6 +134,64 @@ When done, write a summary to the paladin-control-plane thread.
         "project_id": project_id,
         "prompt_id": entry["id"],
         "message": f"Project setup queued. '{project_id}' will appear in dashboard within 2-3 minutes.",
+    }
+
+
+class AddTaskRequest(BaseModel):
+    title: str
+    priority: str  # P1, P2, P3
+    description: str = ""
+    overnight_ready: bool = False
+    blast_radius: str = "LOW"
+
+
+@router.post("/{project_id}/workqueue/add")
+async def add_workqueue_task(project_id: str, body: AddTaskRequest):
+    """Add a new task to the project WORKQUEUE.md."""
+    _validate_project_id(project_id)
+    project = get_project_by_id(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if body.priority not in ("P1", "P2", "P3"):
+        raise HTTPException(status_code=400, detail="Priority must be P1, P2, or P3")
+
+    workqueue_path = Path(project.path) / "context" / "WORKQUEUE.md"
+    if not workqueue_path.exists():
+        raise HTTPException(status_code=404, detail="WORKQUEUE.md not found")
+
+    notes_line = f"\nnotes: {body.description}" if body.description else ""
+    task_block = (
+        f"\n### [{body.priority}-NEW] {body.title}\n"
+        f"project: {project_id}\n"
+        f"parallel: YES\n"
+        f"blast-radius: {body.blast_radius}\n"
+        f"overnight-ready: {'YES' if body.overnight_ready else 'NO'}\n"
+        f"added: {date.today().isoformat()}{notes_line}\n"
+        f"done-when:\n"
+        f"  - (fill in acceptance criteria)\n"
+    )
+
+    content = workqueue_path.read_text(encoding="utf-8")
+
+    # Map priority to the section header it belongs under
+    section_map = {"P1": "## Active Sprint", "P2": "## P3 Backlog", "P3": "## P3 Backlog"}
+    section_marker = section_map[body.priority]
+
+    if section_marker in content:
+        idx = content.index(section_marker)
+        line_end = content.index("\n", idx) + 1
+        content = content[:line_end] + task_block + content[line_end:]
+    else:
+        content += f"\n{task_block}"
+
+    workqueue_path.write_text(content, encoding="utf-8")
+    invalidate_cache()
+
+    return {
+        "status": "added",
+        "title": body.title,
+        "priority": body.priority,
     }
 
 

@@ -516,7 +516,11 @@ function renderProjectData(content, project) {
                 ${collapsible(
                     'workqueue',
                     'Workqueue',
-                    `<div class="workqueue-raw">${escapeHtml(project.workqueue_raw || 'No workqueue data.')}</div>`
+                    `<div class="workqueue-raw">${escapeHtml(project.workqueue_raw || 'No workqueue data.')}</div>
+                     <button class="add-task-btn" type="button"
+                             onclick="showAddTaskForm('${escapeHtml(project.id)}')">
+                         + Add task
+                     </button>`
                 )}
             </div>
 
@@ -592,6 +596,115 @@ function renderProjectData(content, project) {
     setupNeedsInputHandlers(project.id);
     setupBatchUpload(project.id);
 }
+
+// ============================================================
+// Add Task Form (PCP-015)
+// ============================================================
+
+function renderAddTaskForm(projectId) {
+    return `
+    <div class="add-task-form" id="add-task-form">
+        <div class="form-row">
+            <select id="task-priority" class="task-select">
+                <option value="P1">P1 — Do next</option>
+                <option value="P2">P2 — Soon</option>
+                <option value="P3" selected>P3 — Backlog</option>
+            </select>
+            <select id="task-blast" class="task-select">
+                <option value="NONE">No blast radius</option>
+                <option value="LOW" selected>LOW</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="HIGH">HIGH</option>
+            </select>
+            <label class="task-overnight">
+                <input type="checkbox" id="task-overnight">
+                Overnight-ready
+            </label>
+        </div>
+        <input type="text" id="task-title"
+               placeholder="Task title"
+               class="task-title-input">
+        <input type="text" id="task-desc"
+               placeholder="Description (optional)"
+               class="task-desc-input">
+        <div class="form-actions">
+            <button id="task-cancel" class="btn-secondary" type="button">
+                Cancel
+            </button>
+            <button id="task-submit" class="btn-primary"
+                    type="button" disabled>
+                Add task
+            </button>
+        </div>
+        <span id="task-status" class="form-status"></span>
+    </div>`;
+}
+
+function setupAddTaskForm(projectId) {
+    const submitBtn = document.getElementById('task-submit');
+    const cancelBtn = document.getElementById('task-cancel');
+    const titleInput = document.getElementById('task-title');
+    const descInput = document.getElementById('task-desc');
+    const prioritySelect = document.getElementById('task-priority');
+    const blastSelect = document.getElementById('task-blast');
+    const overnightCheck = document.getElementById('task-overnight');
+    const statusEl = document.getElementById('task-status');
+    if (!submitBtn || !cancelBtn) return;
+
+    titleInput?.addEventListener('input', () => {
+        submitBtn.disabled = !titleInput.value.trim();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        document.getElementById('add-task-form')?.remove();
+    });
+
+    submitBtn.addEventListener('click', async () => {
+        const title = titleInput.value.trim();
+        if (!title) return;
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Adding...';
+
+        try {
+            const res = await fetch(
+                `/api/projects/${encodeURIComponent(projectId)}/workqueue/add`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        priority: prioritySelect?.value || 'P3',
+                        description: descInput?.value.trim() || '',
+                        overnight_ready: overnightCheck?.checked || false,
+                        blast_radius: blastSelect?.value || 'LOW',
+                    }),
+                }
+            );
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+            if (statusEl) statusEl.textContent =
+                `Task added to ${data.priority}`;
+            titleInput.value = '';
+            if (descInput) descInput.value = '';
+            submitBtn.textContent = 'Add task';
+        } catch (err) {
+            if (statusEl) statusEl.textContent = `Error: ${err.message}`;
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add task';
+        }
+    });
+}
+
+window.showAddTaskForm = function(projectId) {
+    const existing = document.getElementById('add-task-form');
+    if (existing) { existing.remove(); return; }
+    const btn = document.querySelector('.add-task-btn');
+    if (btn) {
+        btn.insertAdjacentHTML('afterend', renderAddTaskForm(projectId));
+        setupAddTaskForm(projectId);
+    }
+};
 
 function setupBatchUpload(projectId) {
     const fileInput = document.getElementById('batch-file-input');
