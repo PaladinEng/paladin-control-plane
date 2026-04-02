@@ -85,6 +85,11 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 - Auto-executes via queue-worker-full-pass.sh
 - Timeout: 30 minutes per task
 - Task.md: Full objective from prompt content, acceptance criteria require actual execution
+- Hang detector checks git commits before retry — if work was committed, marks prompt handled instead of retrying
+- Prompts marked handled before execution to prevent duplicate retry on supervisor restart
+- Hang detector threshold: 10 minutes (timeout wrapper handles 30min hard cap)
+- Task.md templates include explicit exit instruction to prevent Claude Code hang-on-exit
+- queue-run-codex.sh wraps claude with `timeout 1800` and detects FINISHED WORK signal
 
 **Helper Tools:**
 - supervisor/request_input.py — pauseable Claude Code tasks can request input and wait

@@ -17,6 +17,12 @@ done-when:
   - Claude hang detection: if active queue task has no file activity for
     30 minutes, kill the process and move task to failed with notification
   - Single unified notify() function in poll_prompts.py handles both channels
+  - Hang detector checks git commit timestamps before marking prompts for retry
+  - Prompts marked handled before execution (prevents restart duplicates)
+  - queue-run-codex.sh timeout wrapper (1800s) prevents indefinite process hang
+  - FINISHED WORK signal detection in queue runner for reliable completion
+  - Task.md exit instruction added to both dashboard and overnight templates
+  - Hang detector threshold reduced to 10 minutes (timeout wrapper is the hard cap)
 
 ## P3 Backlog
 
