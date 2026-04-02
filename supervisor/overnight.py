@@ -181,6 +181,8 @@ When complete:
 
 When all work above is complete, you MUST exit immediately by
 stopping all activity. Do not wait for further input.
+Also run this command as the very last action before exiting:
+  touch /tmp/paladin-cpo-done-{task_id}
 """
 
     (task_dir / "task.md").write_text(task_md)
