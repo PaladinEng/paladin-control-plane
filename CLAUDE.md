@@ -1,138 +1,110 @@
-# Paladin Control Plane — Supervisor Context
+# Paladin Control Plane
 
-## Identity and role
-You are the development supervisor for the Paladin Control Plane project, owned by
-Alwyn V. Smith III (Paladin Robotics). Your job is to build and maintain a self-hosted
-operational control plane — web dashboard, backend API, meta-supervisor, ntfy notifications,
-Cloudflare Tunnel access, and GitHub OAuth. You execute work plans autonomously, delegate
-to subagents and agent teams, and keep project context files current. When in doubt,
-write a plan and stop rather than proceeding.
+## Identity and purpose
+Autonomous AI orchestration dashboard for Paladin Robotics. Provides a
+web interface for monitoring projects, dispatching prompts to Claude Code
+agents via CPO, and receiving mobile notifications via ntfy.
 
-## How to start every session
-1. Read context/STATUS.md — current project state
-2. Read context/WORKQUEUE.md — project task queue
-3. Check ~/projects/WORKQUEUE-MASTER.md — cross-project priorities (PCP-* items)
-4. If ~/projects/tonight.md exists, read it and follow it
-5. Run the service health check before making changes:
-   systemctl --user status paladin-api 2>/dev/null; curl -s localhost:8080/health 2>/dev/null
+- **Public URL:** https://dashboard.paladinrobotics.com
+- **Local URL:** http://10.1.10.50:8080
+- **Owner:** Alwyn V. Smith III (Paladin Robotics)
+- **Repo:** PaladinEng/paladin-control-plane (private)
 
-## Architecture
+## Architecture overview
 
-### Overview
-The control plane runs entirely on um790pronode1 (10.1.10.50) as systemd user services.
-It provides a web dashboard for monitoring all Paladin projects, dispatching prompts to
-Claude Code agents, and receiving notifications on mobile via ntfy.
+All services run on um790pronode1 (10.1.10.50) as systemd user services.
 
-### Components
-- **Backend API** (FastAPI, Python 3.12+): REST API on port 8080, serves frontend static files
-  - Endpoints: /health, /api/projects, /api/events, /api/projects/{id}/prompt, /api/projects/{id}/respond
-  - SSE endpoint for real-time push to frontend
-  - Reads project state from ~/projects/*/context/ directories
-  - Systemd user service: paladin-api.service
-- **Frontend** (vanilla JS/HTML/CSS): Single-page dashboard served from backend /static/
-  - Home view: cluster health cards, project status grid
-  - Project view: queue panel, session log viewer, chat thread, prompt input
-  - Mobile-responsive for iPhone Safari
-  - SSE-driven live updates
-- **ntfy** (notification service): Push notifications to iOS/Android
-  - Systemd service on UM790
-  - Claude Code hooks post events to ntfy topics
-  - Deep links back to dashboard for needs-input alerts
-- **Meta-supervisor**: Polls prompt-queue.json, dispatches CPO tasks, manages overnight runs
-- **Cloudflare Tunnel** (cloudflared): Public HTTPS access to dashboard
-- **GitHub OAuth**: Authentication for public access, bypassed on Tailscale
+| Component | Port | Service | Notes |
+|-----------|------|---------|-------|
+| FastAPI backend | 8080 | paladin-api.service | REST API + static file serving |
+| Vanilla JS frontend | — | served from /static/ | No build tools, no npm |
+| ntfy notifications | 8090 | ntfy.service (system) | Push to iOS/Android |
+| Meta-supervisor | — | paladin-supervisor.service | Polls every 30s, sequential queue |
+| Overnight timer | — | paladin-overnight.timer | Daily at 23:00 UTC |
+| Cloudflare Tunnel | — | cloudflared.service (system) | dashboard.paladinrobotics.com |
+| GitHub OAuth | — | via auth middleware | PaladinEng only, Tailscale bypass |
 
-### Directory structure
-```
-paladin-control-plane/
-├── CLAUDE.md                 # This file
-├── backend/                  # FastAPI application
-│   ├── main.py               # App entrypoint
-│   ├── routes/               # API route modules
-│   ├── models/               # Pydantic models
-│   └── services/             # Business logic
-├── frontend/                 # Static web assets
-│   ├── index.html            # SPA shell
-│   ├── css/                  # Stylesheets
-│   └── js/                   # JavaScript modules
-├── config/                   # Configuration files
-│   ├── paladin-api.service   # systemd unit file
-│   └── ntfy-server.service   # ntfy systemd unit file
-├── context/                  # Project context (paladin-context-system v1.0)
-│   ├── STATUS.md
-│   ├── WORKQUEUE.md
-│   ├── DECISIONS.md
-│   ├── AGENTS.md
-│   └── meta.yaml
-├── logs/                     # Session logs
-└── .claude/                  # Claude Code config
-    ├── settings.json
-    └── agents/               # Subagent definitions
-```
+### Request flow
+Dashboard prompt -> POST /api/projects/{id}/prompt -> prompt-queue.json
+-> meta-supervisor (30s poll) -> CPO task in ~/dev/queue/pending/
+-> queue-worker-full-pass.sh -> Claude Code execution -> thread.jsonl response
 
-### Network
-- Backend listens on 0.0.0.0:8080
-- Tailscale access: direct via 10.1.10.50:8080 (no auth required)
-- Public access: via Cloudflare Tunnel → localhost:8080 (GitHub OAuth required)
-- ntfy: localhost:8090 (default ntfy port)
+### Authentication
+- **Public access:** GitHub OAuth (PaladinEng account only), 7-day session cookie
+- **Tailscale access:** Direct IP bypass (10.1.10.x, 100.x.x.x), no auth required
+- **Localhost:** 127.0.0.1 bypass for local testing
+- Header spoofing prevention: trusts direct connection IP only, not X-Forwarded-For
 
-### Infrastructure
-- Host: um790pronode1 (10.1.10.50) — same machine as k3s control plane
-- Python: 3.12+ with venv at ~/projects/paladin-control-plane/.venv/
-- All services run as systemd user units (loginctl enable-linger paladinrobotics)
-- Logs: journalctl --user -u paladin-api
+## Key file locations
 
-## Architecture invariants — never violate these
-1. Backend is the single source of truth for frontend data — no direct file reads from JS.
-2. All project state comes from ~/projects/*/context/ directories — no separate database.
-3. Frontend is vanilla JS/HTML/CSS only — no build tools, no npm, no frameworks.
-4. Services run as systemd user units — not root, not containerized.
-5. ntfy is the only notification channel — no email, no SMS, no Slack.
-6. Update context/STATUS.md and context/WORKQUEUE.md after every completed task.
-7. Commit all file changes to git before ending any session.
-8. **Service restart rules:**
-   - NEVER restart paladin-supervisor.service during task execution.
-     Restarting the supervisor mid-queue resets state and disrupts
-     in-flight tasks. The supervisor is designed to run continuously.
-     To signal a config reload:
-     `systemctl --user kill --signal=SIGHUP paladin-supervisor.service`
-     The supervisor auto-restarts via Restart=on-failure if it crashes —
-     do not manually trigger this.
-   - paladin-api.service MAY be restarted only as the final step of a
-     task, after all code changes are committed, and only when new
-     API endpoints need to be activated.
+| Path | Purpose |
+|------|---------|
+| backend/ | FastAPI application (routes/, models/, services/) |
+| frontend/ | Static web assets (index.html, css/, js/) |
+| supervisor/ | Meta-supervisor (poll_prompts.py, overnight.py, request_input.py) |
+| config/ | Systemd unit files |
+| context/ | Project context files (STATUS.md, WORKQUEUE.md, etc.) |
+| logs/ | Session logs, supervisor logs, overnight logs |
+| ~/paladin-control/data/projects/{id}/ | Thread data (thread.jsonl) and prompt queues (prompt-queue.json) |
+| ~/dev/queue/{pending,active,completed,failed}/ | CPO task queue directories |
+| ~/dev/projects/codex-project-orchestrator/scripts/ | Queue runner scripts |
+| .venv/ | Python 3.12+ virtual environment |
 
-## Blast radius rules
-- LOW: proceed autonomously
-- MEDIUM: write a plan to specs/plan-<task>-<date>.md and validate before executing
-- HIGH: write the plan, then STOP and write to ~/projects/NOTIFY.md — do not execute
+## API endpoints
 
-## Subagents available
-Use these instead of doing everything in the main context:
-- api-developer: FastAPI routes, Python backend, systemd service config, REST API design
-- frontend-developer: vanilla JS/HTML/CSS, SSE, mobile-responsive UI, dashboard views
-- infra-integrator: systemd services, cloudflared tunnel, ntfy setup, OAuth middleware
-- doc-writer: updates STATUS.md, WORKQUEUE.md, DECISIONS.md, session logs
-- code-reviewer: read-only code review before commits
-- git-operator: commits, branches, pushes, PRs via gh CLI
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | /health | Health check |
+| GET | /auth/status | Auth state |
+| GET/POST | /auth/login, /callback, /logout | OAuth flow |
+| GET | /api/projects | List all projects |
+| GET | /api/projects/{id} | Single project detail |
+| GET | /api/events | SSE stream |
+| POST | /api/events | Post event to SSE |
+| GET | /api/projects/{id}/thread | Thread entries |
+| POST | /api/projects/{id}/prompt | Submit prompt |
+| POST | /api/projects/{id}/needs-input | Create needs-input entry |
+| POST | /api/projects/{id}/respond | Submit response |
+| POST | /api/projects/{id}/prompts/batch | Batch prompt submission |
+| POST | /api/projects/{id}/prompts/upload | Upload .md/.txt file as prompts |
+| POST | /api/projects/{id}/archive | Archive project |
+| POST | /api/projects/{id}/restore | Restore project |
+| GET | /api/projects/{id}/logs/{filename} | Download session log |
+| POST | /api/projects/create | Create new project |
+| POST | /api/projects/{id}/workqueue/add | Add workqueue item |
 
-## Agent teams
-Enable for parallel PCP work (e.g., PCP-001 + PCP-002 simultaneously).
-Pattern: Opus lead (this session) + Sonnet workers (one per parallel task).
-Always set model: sonnet for workers to control cost.
+## Available subagents
 
-## Session end requirements
-Before ending any session:
-1. Verify services still running: systemctl --user status paladin-api
+Defined in .claude/agents/:
+
+- **api-developer** (Sonnet) — FastAPI routes, Python backend, systemd config, REST API design
+- **frontend-developer** (Sonnet) — Vanilla JS/HTML/CSS, SSE, mobile-responsive UI
+- **infra-integrator** (Sonnet) — Systemd services, cloudflared, ntfy, OAuth middleware
+
+Pattern: Opus lead + Sonnet workers for parallel tasks.
+
+## Session start checklist
+1. Read context/STATUS.md and context/WORKQUEUE.md
+2. Check ~/projects/WORKQUEUE-MASTER.md for cross-project PCP-* priorities
+3. If ~/projects/tonight.md exists, read and follow it
+4. Check ~/dev/queue/active/ for stuck tasks
+5. Run service health check:
+   ```
+   systemctl --user status paladin-api paladin-supervisor 2>/dev/null
+   curl -s localhost:8080/health
+   ```
+
+## Session end requirements (MANDATORY)
+1. Verify services running: `systemctl --user status paladin-api`
 2. Update context/STATUS.md with current state
-3. Move completed WORKQUEUE items to Completed section
-4. Write session summary to logs/session-YYYY-MM-DD-NNN.md
-5. Commit all changes: git add relevant files && git commit
-6. Print "FINISHED WORK — session completed successfully" to console
+3. Update context/WORKQUEUE.md — move completed items, add new ones
+4. Update context/DECISIONS.md if architectural decisions were made
+5. Commit ALL context file changes before exiting
+6. Write session log to logs/session-YYYY-MM-DD-NNN.md
+7. Print `FINISHED WORK` to console
 
-## Session summary format
-Write to logs/session-YYYY-MM-DD-NNN.md:
-
+### Session log format
+```
 ### Session summary — YYYY-MM-DD
 **Status:** SUCCESS | PARTIAL | FAILED
 **Tasks completed:**
@@ -143,8 +115,29 @@ Write to logs/session-YYYY-MM-DD-NNN.md:
 **Anomalies:** <anything unexpected, or NONE>
 **Suggested next session P1s:**
 - <specific tasks with preconditions>
+```
 
-## Repo
-GitHub: PaladinEng/paladin-control-plane (private)
-Local: ~/projects/paladin-control-plane/
-Commit after every substantive change. Push at session end.
+## Architecture invariants — never violate without explicit discussion
+1. API port: 8080
+2. ntfy port: 8090
+3. Data path: ~/paladin-control/data/projects/
+4. CPO queue path: ~/dev/queue/
+5. Poll interval: 30 seconds
+6. Blast radius enforcement: overnight runs LOW/NONE only
+7. Backend is single source of truth for frontend data — no direct file reads from JS
+8. All project state from ~/projects/*/context/ directories — no separate database
+9. Frontend is vanilla JS/HTML/CSS only — no build tools, no npm, no frameworks
+10. Services run as systemd user units — not root, not containerized
+11. ntfy is the only notification channel — no email, no SMS, no Slack
+
+## Service restart rules
+- **NEVER** restart paladin-supervisor.service during task execution.
+  To signal config reload: `systemctl --user kill --signal=SIGHUP paladin-supervisor.service`
+- paladin-api.service MAY be restarted only as the final step of a task,
+  after all code changes are committed, and only when new API endpoints
+  need to be activated.
+
+## Blast radius rules
+- **LOW/NONE:** proceed autonomously
+- **MEDIUM:** write plan to specs/plan-<task>-<date>.md, validate before executing
+- **HIGH:** write plan, STOP, write to ~/projects/NOTIFY.md — do not execute
