@@ -11,8 +11,11 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
+import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,10 +24,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.services.thread_service import (
+    _read_full_queue,
+    _write_queue,
     add_thread_entry,
     get_prompt_queue,
     mark_prompt_handled,
 )
+
+# Hang detection constants
+HANG_TIMEOUT_SECONDS = 30 * 60  # 30 minutes
+HANG_CHECK_INTERVAL = 60  # check every 60 seconds
 
 # Configuration
 DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
@@ -35,6 +44,7 @@ LOG_FILE = PROJECT_ROOT / "logs" / "supervisor.log"
 API_BASE = "http://localhost:8080"
 
 # Project ID → local project path mapping
+CPO_ACTIVE = Path.home() / "dev" / "queue" / "active"
 PROJECTS_ROOT = Path.home() / "projects"
 
 # Strict project_id validation — prevents path traversal
@@ -47,7 +57,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(str(LOG_FILE)),
-        logging.StreamHandler(sys.stdout),
     ],
 )
 logger = logging.getLogger("supervisor")
@@ -92,19 +101,251 @@ def _post_event(project_id: str, event_type: str, data: dict = None) -> None:
         logger.warning("Failed to post event to API: %s", e)
 
 
-def _execute_cpo_task(project_id: str, task_name: str) -> bool:
+def notify(
+    project_id: str,
+    content: str,
+    entry_type: str = "event",
+    ntfy_title: str = None,
+    ntfy_priority: str = "default",
+    ntfy_tags: str = "bell",
+    ntfy_topic: str = "paladin-alerts",
+) -> None:
+    """
+    Unified notification — writes to project thread AND sends ntfy push.
+
+    entry_type: "event" for task events, "system" for system messages,
+                "response" for supervisor responses
+    ntfy_priority: min, low, default, high, urgent
+    ntfy_tags: comma-separated ntfy tag names (emoji shortcuts)
+    """
+    # 1. Write to project thread
+    try:
+        thread_file = DATA_ROOT / project_id / "thread.jsonl"
+        thread_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": entry_type,
+            "author": "system",
+            "project_id": project_id,
+            "content": content,
+        }
+        with open(thread_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        logger.warning("Failed to write thread entry: %s", e)
+
+    # 2. Send ntfy push notification
+    try:
+        title = ntfy_title or f"[{project_id}] {content[:60]}"
+        subprocess.run(
+            [
+                "curl", "-s", "-X", "POST",
+                f"http://localhost:8090/{ntfy_topic}",
+                "-H", f"Title: {title}",
+                "-H", f"Priority: {ntfy_priority}",
+                "-H", f"Tags: {ntfy_tags}",
+                "-H", f"Click: https://dashboard.paladinrobotics.com/#/project/{project_id}",
+                "-d", content,
+            ],
+            timeout=5,
+            capture_output=True,
+        )
+    except Exception as e:
+        logger.warning("Failed to send ntfy notification: %s", e)
+
+    # 3. Broadcast SSE event so dashboard updates in real time
+    _post_event(project_id, "thread_update", {})
+
+
+def _get_active_task_mtime(task_dir: Path) -> float:
+    """Return most recent mtime of any file in the task directory."""
+    try:
+        mtimes = [
+            f.stat().st_mtime
+            for f in task_dir.rglob("*")
+            if f.is_file()
+        ]
+        return max(mtimes) if mtimes else task_dir.stat().st_mtime
+    except Exception:
+        return 0.0
+
+
+def _task_completed_work(task_dir: Path, project_path: str) -> bool:
+    """
+    Check if a task completed its work before hanging.
+    Returns True if a git commit was made in project_path
+    after the task directory was created.
+    """
+    try:
+        task_created = task_dir.stat().st_mtime
+        result = subprocess.run(
+            ["git", "log", "--format=%ct", "-1"],
+            capture_output=True, text=True,
+            cwd=project_path, timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+        last_commit_time = float(result.stdout.strip())
+        return last_commit_time > task_created
+    except Exception:
+        return False
+
+
+def _parse_project_path_from_task(task_md_path: Path) -> str | None:
+    """Extract project path from a task.md file (## Project path section)."""
+    try:
+        lines = task_md_path.read_text(encoding="utf-8").splitlines()
+        in_section = False
+        for line in lines:
+            if line.strip() == "## Project path":
+                in_section = True
+                continue
+            if in_section:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    return stripped
+                if stripped.startswith("#"):
+                    break  # hit next section
+        return None
+    except Exception:
+        return None
+
+
+def hang_detector(cpo_active_dir: Path) -> None:
+    """
+    Background thread: watches active/ for tasks with no recent file
+    activity. If a task directory has had no file changes for
+    HANG_TIMEOUT_SECONDS, kills any claude processes and moves the
+    task to failed.
+    """
+    while True:
+        time.sleep(HANG_CHECK_INTERVAL)
+        try:
+            if not cpo_active_dir.exists():
+                continue
+            for task_dir in cpo_active_dir.iterdir():
+                if not task_dir.is_dir():
+                    continue
+
+                mtime = _get_active_task_mtime(task_dir)
+                age = time.time() - mtime
+
+                if age > HANG_TIMEOUT_SECONDS:
+                    project_id = task_dir.name.rsplit("-", 1)[0]
+                    logger.warning(
+                        "Hang detected: %s has had no file activity for %.0f minutes",
+                        task_dir.name, age / 60,
+                    )
+
+                    # Kill any running claude processes
+                    try:
+                        subprocess.run(
+                            ["pkill", "-f", "claude.*--print"],
+                            capture_output=True,
+                        )
+                        logger.info("Killed hung claude process(es)")
+                    except Exception as e:
+                        logger.warning("pkill failed: %s", e)
+
+                    # Move task to failed
+                    failed_dir = cpo_active_dir.parent / "failed" / task_dir.name
+                    failed_dir.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        task_dir.rename(failed_dir)
+                        logger.info("Moved hung task to failed/: %s", task_dir.name)
+                    except Exception as e:
+                        logger.error("Failed to move task: %s", e)
+
+                    # Check if work actually completed before hang
+                    project_path = None
+                    task_md = failed_dir / "task.md"
+                    if task_md.exists():
+                        project_path = _parse_project_path_from_task(task_md)
+
+                    work_done = False
+                    if project_path:
+                        work_done = _task_completed_work(failed_dir, project_path)
+
+                    if work_done:
+                        logger.info(
+                            "Hung task %s had completed its work — "
+                            "marking prompt as handled to prevent retry",
+                            task_dir.name,
+                        )
+                        # Mark the prompt as handled so supervisor doesn't retry
+                        try:
+                            queue = _read_full_queue(project_id)
+                            prompt_id_suffix = task_dir.name.split("-")[-1]
+                            for entry in queue:
+                                eid = entry.get("id", "")
+                                if eid.startswith(prompt_id_suffix) or \
+                                   eid.endswith(prompt_id_suffix):
+                                    entry["handled"] = True
+                                    logger.info("Marked prompt %s as handled", eid)
+                                    break
+                            _write_queue(project_id, queue)
+
+                            add_thread_entry(
+                                project_id, "event", "system",
+                                f"Task {task_dir.name} completed work but hung on "
+                                f"exit. Auto-killed after {age / 60:.0f} minutes. "
+                                f"Work committed — no retry needed.",
+                            )
+                        except Exception as e:
+                            logger.error("Failed to mark prompt handled: %s", e)
+
+                        notify(
+                            project_id,
+                            f"Task {task_dir.name} hung after completing work. "
+                            f"Killed and marked complete — no retry.",
+                            ntfy_title=f"\u26a0\ufe0f [{project_id}] Hung task — work was done",
+                            ntfy_tags="warning",
+                            ntfy_priority="default",
+                        )
+                    else:
+                        logger.info(
+                            "Hung task %s had NOT completed work — "
+                            "leaving prompt unhandled for retry",
+                            task_dir.name,
+                        )
+                        notify(
+                            project_id,
+                            f"Task {task_dir.name} was killed after "
+                            f"{age / 60:.0f} minutes with no file activity. "
+                            f"No work detected — will retry.",
+                            ntfy_title=f"\U0001f534 [{project_id}] Hung task killed — retrying",
+                            ntfy_tags="skull",
+                            ntfy_priority="high",
+                        )
+        except Exception as e:
+            logger.error("Hang detector error: %s", e)
+
+
+def start_hang_detector() -> None:
+    """Start the hang detector as a daemon thread."""
+    cpo_active = Path.home() / "dev" / "queue" / "active"
+    t = threading.Thread(
+        target=hang_detector,
+        args=(cpo_active,),
+        daemon=True,
+        name="hang-detector",
+    )
+    t.start()
+    logger.info("Hang detector thread started")
+
+
+def _execute_cpo_task(project_id: str, task_name: str) -> str:
     """
     Run queue-worker-full-pass.sh to execute the pending CPO task.
-    Runs in a subprocess. Returns True if execution completed successfully.
+    Returns "success", "failed", or "timeout".
     """
-    import subprocess
-
     script = (Path.home() / "projects" / "codex-project-orchestrator"
               / "scripts" / "queue-worker-full-pass.sh")
 
     if not script.exists():
         logger.error("queue-worker-full-pass.sh not found at %s", script)
-        return False
+        return "failed"
 
     logger.info("Executing CPO task %s via queue-worker-full-pass.sh", task_name)
 
@@ -122,24 +363,24 @@ def _execute_cpo_task(project_id: str, task_name: str) -> bool:
             logger.info("Task %s completed successfully", task_name)
             if stdout:
                 logger.info("Output (last 500 chars): %s", stdout[-500:])
-            return True
+            return "success"
         else:
             logger.error("Task %s failed (exit %d)", task_name, proc.returncode)
             if stderr:
                 logger.error("stderr: %s", stderr[-500:])
-            return False
+            return "failed"
     except subprocess.TimeoutExpired:
         logger.error("Task %s timed out after 30 minutes", task_name)
         if proc:
             proc.kill()
             proc.wait()
-        return False
+        return "timeout"
     except Exception as e:
         logger.error("Task %s execution error: %s", task_name, e)
         if proc:
             proc.kill()
             proc.wait()
-        return False
+        return "failed"
 
 
 def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
@@ -205,56 +446,87 @@ Exit cleanly.
     return task_id
 
 
-def process_prompt(project_id: str, prompt: dict) -> None:
-    """Process a single unhandled prompt."""
+def _active_queue_is_empty() -> bool:
+    """Return True if no tasks are currently executing."""
+    try:
+        return not any(CPO_ACTIVE.iterdir())
+    except Exception:
+        return True
+
+
+def process_prompt(project_id: str, prompt: dict) -> bool:
+    """Process a single unhandled prompt. Returns True if executed, False if deferred."""
     prompt_id = prompt["id"]
     content = prompt["content"]
 
     logger.info("Processing prompt %s for project %s", prompt_id[:8], project_id)
 
-    # Write routing response to thread
-    add_thread_entry(
-        project_id,
-        "event",
-        "system",
-        "Supervisor received: routing to CPO...",
-    )
+    # Check active/ before executing — defer if busy
+    if not _active_queue_is_empty():
+        logger.info(
+            "Active queue not empty — deferring prompt %s to next poll cycle",
+            prompt_id[:8],
+        )
+        return False
 
-    # Create CPO task first, then mark handled (so prompt isn't lost on failure)
+    # Create CPO task
     task_id = _create_cpo_task(project_id, prompt_id, content)
-    mark_prompt_handled(project_id, prompt_id)
     logger.info("Created CPO task %s for prompt %s", task_id, prompt_id[:8])
 
-    # Post event to API
-    _post_event(project_id, "prompt_routed", {
-        "prompt_id": prompt_id,
-        "task_id": task_id,
-    })
+    # Unified notification: task routed
+    notify(
+        project_id,
+        f"Task {task_id} created and queued for execution",
+        ntfy_tags="gear",
+        ntfy_priority="low",
+    )
 
     logger.info("Routed prompt %s → task %s", prompt_id[:8], task_id)
 
+    # Mark handled BEFORE execution — prevents duplicate retry if supervisor
+    # restarts mid-execution. Hang detector handles the in-execution case.
+    mark_prompt_handled(project_id, prompt_id)
+
     # Execute the task automatically
-    success = _execute_cpo_task(project_id, task_id)
-    if success:
-        add_thread_entry(
-            project_id, "event", "system",
+    result = _execute_cpo_task(project_id, task_id)
+
+    if result == "success":
+        notify(
+            project_id,
             f"Task {task_id} completed successfully",
+            ntfy_title=f"\u2705 [{project_id}] Task complete",
+            ntfy_tags="white_check_mark",
+            ntfy_priority="default",
         )
-        _post_event(project_id, "task_completed", {"task": task_id})
+    elif result == "timeout":
+        notify(
+            project_id,
+            f"Task {task_id} timed out after 30 minutes. "
+            f"Claude Code may have hung. Check ~/dev/queue/active/ "
+            f"and kill any stuck processes.",
+            ntfy_title=f"\u23f1 [{project_id}] Task timed out",
+            ntfy_tags="timer_clock",
+            ntfy_priority="high",
+        )
     else:
-        add_thread_entry(
-            project_id, "event", "system",
-            f"Task {task_id} failed or timed out — check CPO logs",
+        notify(
+            project_id,
+            f"Task {task_id} failed \u2014 check CPO logs",
+            ntfy_title=f"\u274c [{project_id}] Task failed",
+            ntfy_tags="x",
+            ntfy_priority="high",
         )
-        _post_event(project_id, "task_failed", {"task": task_id})
+    return True
 
 
 def poll_once() -> int:
-    """Scan all project prompt queues. Returns count of prompts processed."""
-    count = 0
+    """Scan all project prompt queues. Process at most ONE prompt per cycle.
+    Returns count of prompts processed (0 or 1)."""
     if not DATA_ROOT.exists():
-        return count
+        return 0
 
+    # Collect all unhandled prompts across all projects
+    all_prompts: list[tuple[str, dict]] = []
     for project_dir in sorted(DATA_ROOT.iterdir()):
         if not project_dir.is_dir():
             continue
@@ -266,20 +538,36 @@ def poll_once() -> int:
         try:
             prompts = get_prompt_queue(project_id)
             for prompt in prompts:
-                try:
-                    process_prompt(project_id, prompt)
-                    count += 1
-                except Exception as e:
-                    logger.error(
-                        "Error processing prompt %s for %s: %s",
-                        prompt.get("id", "?")[:8],
-                        project_id,
-                        e,
-                    )
+                all_prompts.append((project_id, prompt))
         except Exception as e:
             logger.error("Error reading queue for %s: %s", project_id, e)
 
-    return count
+    if not all_prompts:
+        return 0
+
+    # Process only the FIRST prompt — leave the rest for subsequent cycles
+    project_id, prompt = all_prompts[0]
+    try:
+        executed = process_prompt(project_id, prompt)
+        if not executed:
+            # Deferred due to active queue — log remaining depth
+            logger.info("Queue depth: %d prompt(s) waiting", len(all_prompts))
+            return 0
+    except Exception as e:
+        logger.error(
+            "Error processing prompt %s for %s: %s",
+            prompt.get("id", "?")[:8],
+            project_id,
+            e,
+        )
+        return 0
+
+    # Log remaining queue depth
+    remaining = len(all_prompts) - 1
+    if remaining > 0:
+        logger.info("Queue depth: %d prompt(s) waiting", remaining)
+
+    return 1
 
 
 def main() -> None:
@@ -288,8 +576,17 @@ def main() -> None:
     PID_FILE.write_text(str(os.getpid()) + "\n")
     logger.info("Supervisor started (PID %d)", os.getpid())
 
+    start_hang_detector()
+
+    cycle_count = 0
     try:
         while True:
+            cycle_count += 1
+            logger.info(
+                "Supervisor heartbeat — poll cycle %d (PID %d)",
+                cycle_count,
+                os.getpid(),
+            )
             count = poll_once()
             if count > 0:
                 logger.info("Poll cycle complete: processed %d prompt(s)", count)
