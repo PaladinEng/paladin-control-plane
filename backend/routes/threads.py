@@ -3,6 +3,8 @@ Thread and prompt endpoints for per-project chat.
 
 GET  /api/projects/{id}/thread  — list thread entries
 POST /api/projects/{id}/prompt  — submit a user prompt
+POST /api/projects/{id}/prompts/batch  — submit multiple prompts
+POST /api/projects/{id}/prompts/upload — upload .md/.txt file of prompts
 """
 
 import asyncio
@@ -10,8 +12,10 @@ import json
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
+
+from backend.utils.prompt_parser import parse_prompts
 
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -107,3 +111,85 @@ async def submit_response_endpoint(
     _broadcast_sse("status_update", project_id)
 
     return response_entry
+
+
+class BatchPromptRequest(BaseModel):
+    prompts: list[str]
+
+
+@router.post("/{project_id}/prompts/batch")
+async def submit_batch_prompts(
+    project_id: str, body: BatchPromptRequest, request: Request
+):
+    """Submit multiple prompts at once — queued and executed in order."""
+    _validate_project_id(project_id)
+
+    if not body.prompts:
+        raise HTTPException(status_code=400, detail="No prompts provided")
+
+    if len(body.prompts) > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 50 prompts per batch",
+        )
+
+    entries = []
+    for content in body.prompts:
+        content = content.strip()
+        if not content:
+            continue
+        entry = add_prompt(project_id, content)
+        entries.append(entry)
+
+    _broadcast_sse("thread_update", project_id)
+
+    return {
+        "queued": len(entries),
+        "prompt_ids": [e["id"] for e in entries],
+    }
+
+
+@router.post("/{project_id}/prompts/upload")
+async def upload_prompt_file(
+    project_id: str,
+    file: UploadFile = File(...),
+    request: Request = None,
+):
+    """Upload a .md or .txt file and queue each section as a prompt."""
+    _validate_project_id(project_id)
+
+    if file.content_type not in (
+        "text/plain",
+        "text/markdown",
+        "application/octet-stream",
+    ) and not (file.filename or "").endswith((".md", ".txt")):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .md and .txt files accepted",
+        )
+
+    content = (await file.read()).decode("utf-8", errors="replace")
+    prompts = parse_prompts(content)
+
+    if not prompts:
+        raise HTTPException(status_code=400, detail="No prompts found in file")
+
+    if len(prompts) > 50:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File contains {len(prompts)} prompts — maximum is 50",
+        )
+
+    entries = []
+    for p in prompts:
+        entry = add_prompt(project_id, p)
+        entries.append(entry)
+
+    _broadcast_sse("thread_update", project_id)
+
+    return {
+        "queued": len(entries),
+        "filename": file.filename,
+        "prompt_ids": [e["id"] for e in entries],
+        "preview": [p[:80] + "..." if len(p) > 80 else p for p in prompts],
+    }

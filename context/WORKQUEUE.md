@@ -31,18 +31,6 @@ done-when:
   - GET /api/projects/{id}/logs/{filename} serves the raw log file
   - Works on mobile (iOS Safari download)
 
-### [PCP-013] Batch prompt upload
-project: paladin-control-plane
-parallel: YES
-blast-radius: NONE
-overnight-ready: YES
-preconditions: PCP-004 complete
-done-when:
-  - File upload or multi-line paste mode in project view
-  - Each blank-line or ## section becomes a separate queued prompt
-  - Prompts queued in order and executed sequentially
-  - Upload confirmation shows how many prompts were queued
-
 ### [PCP-014] Spawn new projects from dashboard
 project: paladin-control-plane
 parallel: NO
@@ -90,3 +78,4 @@ done-when:
 - [x] 2026-04-01 PCP-010: Add project archive and restore — archive/restore buttons, collapsed section on home view
 - [x] 2026-04-01 PCP-011: Fix claude CLI PATH — systemd override adds ~/.npm-global/bin to PATH, queue-run-codex.sh uses CLAUDE_BIN fallback, end-to-end test passed
 - [x] 2026-04-02 PCP-011a: Morning briefing (superseded by PCP-009) — functionality covered by PCP-009 overnight timer and ntfy notifications
+- [x] 2026-04-02 PCP-013: Batch prompt upload — file upload (.md/.txt) with ##-section and paragraph parsing, batch/upload endpoints, dashboard UI with preview

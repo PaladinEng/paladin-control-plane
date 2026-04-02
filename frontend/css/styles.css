@@ -839,6 +839,19 @@ pre code {
     color: var(--text-muted);
 }
 
+.session-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 13px;
+    flex: 1;
+}
+.session-link:hover { text-decoration: underline; }
+.session-size {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 6px;
+}
+
 /* Raw log block */
 .raw-log-block {
     background: var(--bg);
@@ -1200,6 +1213,124 @@ pre code {
 
 .prompt-submit:not(:disabled):hover {
     opacity: 0.85;
+}
+
+/* Batch Upload */
+.batch-upload-section { margin-top: 12px; }
+.batch-details { border: 0.5px solid var(--border); border-radius: var(--radius-card); }
+.batch-summary {
+    padding: 10px 14px; cursor: pointer; font-size: 13px;
+    color: var(--text-secondary); list-style: none;
+}
+.batch-summary::-webkit-details-marker { display: none; }
+.batch-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.batch-hint { font-size: 12px; color: var(--text-muted); margin: 0; }
+.batch-file-input { font-size: 13px; }
+.batch-preview {
+    font-size: 12px; color: var(--text-secondary);
+    max-height: 120px; overflow-y: auto;
+    background: var(--surface); border-radius: var(--radius-btn);
+    padding: 8px; display: none;
+}
+.batch-submit {
+    align-self: flex-start; padding: 6px 16px;
+    border-radius: var(--radius-btn); border: 0.5px solid var(--border);
+    background: transparent; color: var(--text-primary);
+    font-size: 13px; cursor: pointer;
+}
+.batch-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+.batch-status { font-size: 12px; color: var(--text-secondary); }
+
+/* ============================================================
+   Archive / Restore
+   ============================================================ */
+
+.project-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.archive-btn {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-btn);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+}
+
+.archive-btn:hover {
+    color: var(--text-secondary);
+    border-color: var(--text-muted);
+    background: var(--surface-hover);
+}
+
+.archive-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.archive-btn.restore-btn {
+    color: var(--accent);
+    border-color: rgba(88, 166, 255, 0.3);
+}
+
+.archive-btn.restore-btn:hover {
+    background: rgba(88, 166, 255, 0.1);
+    border-color: var(--accent);
+}
+
+.project-card-archived {
+    opacity: 0.7;
+}
+
+.project-card-archived:hover {
+    opacity: 1;
+}
+
+.archived-section {
+    margin-top: 32px;
+}
+
+.archived-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-btn);
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s, color 0.15s;
+}
+
+.archived-header:hover {
+    background: var(--surface-hover);
+    color: var(--text-secondary);
+}
+
+.archived-header .collapsible-icon {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.2s;
+}
+
+.archived-header.open .collapsible-icon {
+    transform: rotate(90deg);
+}
+
+.archived-body {
+    padding-top: 16px;
 }
 
 /* Error display */

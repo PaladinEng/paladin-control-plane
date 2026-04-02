@@ -32,6 +32,8 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 - `POST /api/projects/{id}/prompt` — submit prompt to project
 - `POST /api/projects/{id}/needs-input` — create needs-input thread entry
 - `POST /api/projects/{id}/respond` — create response thread entry
+- `POST /api/projects/{id}/prompts/batch` — submit multiple prompts at once (JSON body)
+- `POST /api/projects/{id}/prompts/upload` — upload .md/.txt file, auto-parse into queued prompts
 - `POST /api/projects/{id}/archive` — archives project, returns `{"status":"archived"}`
 - `POST /api/projects/{id}/restore` — restores project, returns `{"status":"active"}`
 
@@ -155,6 +157,7 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 ## In Progress
 
 - **PCP-011:** Unify ntfy and dashboard thread notifications — in active development
+- **PCP-013:** Batch prompt upload — complete (2026-04-02)
 
 ## Blocked
 
@@ -171,6 +174,7 @@ None. All dependencies satisfied.
 - PCP-001 through PCP-010 completed
 - PCP-011 (PATH fix for Claude CLI in systemd services) merged 2026-04-01
 - Smoke test verification 2026-04-02: all systems operational
+- PCP-013 (batch prompt upload) completed 2026-04-02
 
 ## Last Updated
 

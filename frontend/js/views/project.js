@@ -182,15 +182,25 @@ function renderTaskList(tasks) {
     return `<ul class="task-list">${items}</ul>`;
 }
 
-function renderSessions(sessions) {
+function renderSessions(sessions, projectId) {
     if (!sessions || sessions.length === 0) {
         return '<p class="text-muted" style="font-size:13px">No session logs found.</p>';
     }
-    const items = sessions.map(s => `
+    const items = sessions.map(s => {
+        const filename = typeof s === 'string' ? s : s.filename;
+        const size = s.size ? ` (${Math.round(s.size / 1024)}kb)` : '';
+        return `
         <li class="session-item">
             ${docIcon()}
-            <span>${escapeHtml(s)}</span>
-        </li>`).join('');
+            <a class="session-link"
+               href="/api/projects/${encodeURIComponent(projectId)}/logs/${encodeURIComponent(filename)}"
+               download="${escapeHtml(filename)}"
+               target="_blank">
+                ${escapeHtml(filename)}
+            </a>
+            <span class="session-size">${escapeHtml(size)}</span>
+        </li>`;
+    }).join('');
     return `<ul class="session-list">${items}</ul>`;
 }
 
@@ -498,7 +508,7 @@ function renderProjectData(content, project) {
             <!-- Session Logs -->
             <div class="panel-section">
                 <p class="section-title">Session Logs</p>
-                ${renderSessions(project.recent_sessions)}
+                ${renderSessions(project.recent_sessions, project.id)}
             </div>
 
             <!-- Raw Workqueue (collapsible) -->
@@ -534,6 +544,28 @@ function renderProjectData(content, project) {
                     <button type="submit" id="prompt-submit" class="prompt-submit" disabled>Send</button>
                 </div>
             </form>
+            <div class="batch-upload-section">
+                <details class="batch-details">
+                    <summary class="batch-summary">
+                        Upload batch prompts (.md or .txt)
+                    </summary>
+                    <div class="batch-body">
+                        <p class="batch-hint">
+                            Each ## section or blank-line paragraph becomes
+                            a separate queued prompt, executed in order.
+                        </p>
+                        <input type="file" id="batch-file-input"
+                               accept=".md,.txt,text/plain,text/markdown"
+                               class="batch-file-input">
+                        <div id="batch-preview" class="batch-preview"></div>
+                        <button id="batch-submit" class="batch-submit"
+                                disabled type="button">
+                            Queue prompts
+                        </button>
+                        <span id="batch-status" class="batch-status"></span>
+                    </div>
+                </details>
+            </div>
         </div>`;
 
     content.innerHTML = `
@@ -558,6 +590,72 @@ function renderProjectData(content, project) {
     loadThread(project.id);
     setupPromptInput(project.id);
     setupNeedsInputHandlers(project.id);
+    setupBatchUpload(project.id);
+}
+
+function setupBatchUpload(projectId) {
+    const fileInput = document.getElementById('batch-file-input');
+    const submitBtn = document.getElementById('batch-submit');
+    const preview = document.getElementById('batch-preview');
+    const status = document.getElementById('batch-status');
+    if (!fileInput || !submitBtn) return;
+
+    let parsedPrompts = [];
+
+    fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const text = await file.text();
+        parsedPrompts = text.includes('\n## ')
+            ? text.split(/\n(?=## )/).map(s => s.trim()).filter(Boolean)
+            : text.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+
+        if (parsedPrompts.length === 0) {
+            preview.style.display = 'none';
+            submitBtn.disabled = true;
+            if (status) status.textContent = 'No prompts found in file.';
+            return;
+        }
+
+        preview.style.display = 'block';
+        preview.innerHTML = `<strong>${parsedPrompts.length} prompt(s) found:</strong><br>` +
+            parsedPrompts.map((p, i) =>
+                `${i + 1}. ${escapeHtml(p.slice(0, 60))}${p.length > 60 ? '\u2026' : ''}`
+            ).join('<br>');
+        submitBtn.disabled = false;
+        if (status) status.textContent = '';
+    });
+
+    submitBtn.addEventListener('click', async () => {
+        if (!parsedPrompts.length) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Queuing...';
+        if (status) status.textContent = '';
+
+        try {
+            const res = await fetch(
+                `/api/projects/${encodeURIComponent(projectId)}/prompts/batch`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompts: parsedPrompts }),
+                }
+            );
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (status) status.textContent =
+                `Queued ${data.queued} prompt(s) successfully`;
+            fileInput.value = '';
+            preview.style.display = 'none';
+            parsedPrompts = [];
+            await loadThread(projectId);
+        } catch (err) {
+            if (status) status.textContent = `Error: ${err.message}`;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Queue prompts';
+        }
+    });
 }
 
 export function cleanupProject() {
