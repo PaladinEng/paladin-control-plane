@@ -36,6 +36,11 @@ from backend.services.thread_service import (
 HANG_TIMEOUT_SECONDS = 10 * 60  # 10 minutes — timeout wrapper handles 30min hard cap
 HANG_CHECK_INTERVAL = 60  # check every 60 seconds
 
+# Retry cooldown for hang detector — prevents infinite retry loops
+_retry_counts: dict[str, int] = {}  # project_id -> retry count
+_retry_delays = [0, 60, 120, 300, 600]  # seconds between retries (exponential backoff)
+_last_retry_time: dict[str, float] = {}  # project_id -> last retry timestamp
+
 # Configuration
 DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
 QUEUE_ROOT = Path.home() / "dev" / "queue" / "pending"
@@ -174,6 +179,30 @@ def notify(
 
     # 3. Broadcast SSE event so dashboard updates in real time
     _post_event(project_id, "thread_update", {})
+
+
+def _should_retry_now(prompt_key: str) -> bool:
+    """Return True if enough time has passed since last retry for this prompt."""
+    count = _retry_counts.get(prompt_key, 0)
+    if count >= len(_retry_delays):
+        logger.warning("Prompt %s has failed %d times — giving up", prompt_key, count)
+        return False
+    delay = _retry_delays[count]
+    last = _last_retry_time.get(prompt_key, 0)
+    if time.time() - last < delay:
+        return False
+    return True
+
+
+def _record_retry(prompt_key: str) -> None:
+    """Record a retry attempt for exponential backoff tracking."""
+    _retry_counts[prompt_key] = _retry_counts.get(prompt_key, 0) + 1
+    _last_retry_time[prompt_key] = time.time()
+    next_delay = _retry_delays[min(_retry_counts[prompt_key], len(_retry_delays) - 1)]
+    logger.info(
+        "Prompt %s retry #%d (next delay: %ds)",
+        prompt_key, _retry_counts[prompt_key], next_delay,
+    )
 
 
 def _get_active_task_mtime(task_dir: Path) -> float:
@@ -322,20 +351,62 @@ def hang_detector(cpo_active_dir: Path) -> None:
                             ntfy_priority="default",
                         )
                     else:
-                        logger.info(
-                            "Hung task %s had NOT completed work — "
-                            "leaving prompt unhandled for retry",
-                            task_dir.name,
-                        )
-                        notify(
-                            project_id,
-                            f"Task {task_dir.name} was killed after "
-                            f"{age / 60:.0f} minutes with no file activity. "
-                            f"No work detected — will retry.",
-                            ntfy_title=f"\U0001f534 [{project_id}] Hung task killed — retrying",
-                            ntfy_tags="skull",
-                            ntfy_priority="high",
-                        )
+                        # Retry cooldown — prevent infinite retry loops
+                        prompt_key = task_dir.name  # project_id-prompt_id[:8]
+                        if _should_retry_now(prompt_key):
+                            _record_retry(prompt_key)
+                            logger.info(
+                                "Hung task %s had NOT completed work — "
+                                "leaving prompt unhandled for retry "
+                                "(attempt #%d)",
+                                task_dir.name,
+                                _retry_counts.get(prompt_key, 0),
+                            )
+                            notify(
+                                project_id,
+                                f"Task {task_dir.name} was killed after "
+                                f"{age / 60:.0f} minutes with no file activity. "
+                                f"No work detected — will retry "
+                                f"(attempt #{_retry_counts.get(prompt_key, 0)}).",
+                                ntfy_title=f"\U0001f534 [{project_id}] Hung task killed — retrying",
+                                ntfy_tags="skull",
+                                ntfy_priority="high",
+                            )
+                        else:
+                            # Max retries exceeded — mark handled and give up
+                            retry_count = _retry_counts.get(prompt_key, 0)
+                            logger.warning(
+                                "Hung task %s — max retries (%d) exceeded, "
+                                "marking as handled",
+                                task_dir.name, retry_count,
+                            )
+                            try:
+                                queue = _read_full_queue(project_id)
+                                prompt_id_suffix = task_dir.name.split("-")[-1]
+                                for entry in queue:
+                                    eid = entry.get("id", "")
+                                    if eid.startswith(prompt_id_suffix) or \
+                                       eid.endswith(prompt_id_suffix):
+                                        entry["handled"] = True
+                                        logger.info(
+                                            "Marked prompt %s as handled "
+                                            "(max retries exceeded)", eid,
+                                        )
+                                        break
+                                _write_queue(project_id, queue)
+                            except Exception as e:
+                                logger.error(
+                                    "Failed to mark prompt handled: %s", e,
+                                )
+                            notify(
+                                project_id,
+                                f"Prompt {prompt_key} failed after "
+                                f"{retry_count} retries. Check CPO logs "
+                                f"and resubmit manually if needed.",
+                                ntfy_title=f"\u274c [{project_id}] Max retries exceeded",
+                                ntfy_tags="x",
+                                ntfy_priority="high",
+                            )
         except Exception as e:
             logger.error("Hang detector error: %s", e)
 
