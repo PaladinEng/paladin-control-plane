@@ -74,15 +74,35 @@ export async function restoreProject(projectId) {
     return res.json();
 }
 
-export async function createProject(name, repo, description) {
+export async function createProject(payload) {
     const res = await fetch(`${API_BASE}/api/projects/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, repo, description }),
+        body: JSON.stringify(payload),
     });
     if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || `Failed to create project: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function getSystemConfig() {
+    const res = await fetch(`${API_BASE}/api/system/config`);
+    if (!res.ok) throw new Error(`Failed to load config: ${res.status}`);
+    return res.json();
+}
+
+export async function uploadBrief(file) {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/api/projects/uploads`, {
+        method: 'POST',
+        body: form,
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Upload failed: ${res.status}`);
     }
     return res.json();
 }

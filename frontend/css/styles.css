@@ -393,46 +393,106 @@ pre code {
 .status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
     white-space: nowrap;
 }
 
 .status-badge .dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: currentColor;
+    flex-shrink: 0;
 }
 
+/* running — green, pulsing dot to indicate live activity */
+.badge-running {
+    background: rgba(34, 197, 94, 0.12);
+    color: #16a34a;
+    border: 0.5px solid rgba(34, 197, 94, 0.3);
+}
+.badge-running .dot {
+    background: #16a34a;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* queued — blue, steady */
+.badge-queued {
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+    border: 0.5px solid rgba(59, 130, 246, 0.3);
+}
+.badge-queued .dot { background: #2563eb; }
+
+/* active — amber, steady */
 .badge-active {
-    background: rgba(63, 185, 80, 0.15);
-    color: var(--status-green);
-    border: 1px solid rgba(63, 185, 80, 0.3);
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    border: 0.5px solid rgba(245, 158, 11, 0.3);
+}
+.badge-active .dot { background: #d97706; }
+
+/* needs-input — orange, pulsing to draw attention */
+.badge-needs-input {
+    background: rgba(249, 115, 22, 0.12);
+    color: #ea580c;
+    border: 0.5px solid rgba(249, 115, 22, 0.3);
+}
+.badge-needs-input .dot {
+    background: #ea580c;
+    animation: pulse-dot 1s ease-in-out infinite;
 }
 
+/* idle — grey, muted */
+.badge-idle {
+    background: rgba(100, 116, 139, 0.10);
+    color: #64748b;
+    border: 0.5px solid rgba(100, 116, 139, 0.2);
+}
+.badge-idle .dot { background: #64748b; }
+
+/* error — red */
 .badge-error {
-    background: rgba(248, 81, 73, 0.15);
-    color: var(--status-red);
-    border: 1px solid rgba(248, 81, 73, 0.3);
+    background: rgba(220, 38, 38, 0.12);
+    color: #dc2626;
+    border: 0.5px solid rgba(220, 38, 38, 0.3);
 }
+.badge-error .dot { background: #dc2626; }
 
-.badge-in-progress {
-    background: rgba(210, 153, 34, 0.15);
-    color: var(--status-yellow);
-    border: 1px solid rgba(210, 153, 34, 0.3);
-}
-
-.badge-idle,
+/* inactive / archived — dark grey, very muted */
 .badge-inactive {
-    background: rgba(72, 79, 88, 0.3);
-    color: var(--text-muted);
-    border: 1px solid var(--border-subtle);
+    background: rgba(71, 85, 105, 0.08);
+    color: #475569;
+    border: 0.5px solid rgba(71, 85, 105, 0.15);
+}
+.badge-inactive .dot { background: #475569; }
+
+/* in-progress — same as active for now */
+.badge-in-progress {
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    border: 0.5px solid rgba(245, 158, 11, 0.3);
+}
+.badge-in-progress .dot { background: #d97706; }
+
+/* provisioning — purple, pulsing (same as running pattern) */
+.badge-provisioning {
+    background: rgba(123, 79, 212, 0.12);
+    color: #7B4FD4;
+    border: 0.5px solid rgba(123, 79, 212, 0.3);
+}
+.badge-provisioning .dot {
+    background: #7B4FD4;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* pulse animation for running and needs-input dots */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
 }
 
 .task-count {
@@ -1143,30 +1203,6 @@ pre code {
     flex: 1;
 }
 
-.badge-needs-input {
-    background: rgba(210, 153, 34, 0.15);
-    color: var(--status-yellow);
-    border: 1px solid rgba(210, 153, 34, 0.3);
-}
-
-.badge-running {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
-    border: 1px solid rgba(59, 130, 246, 0.3);
-}
-.badge-running .dot { background: #3b82f6; animation: pulse 1.5s infinite; }
-
-.badge-queued {
-    background: rgba(168, 85, 247, 0.12);
-    color: #a855f7;
-    border: 1px solid rgba(168, 85, 247, 0.3);
-}
-.badge-queued .dot { background: #a855f7; }
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
 
 /* Prompt Input */
 .prompt-form {
@@ -1462,4 +1498,82 @@ pre code {
     color: var(--status-red);
     font-size: 13px;
     margin-bottom: 16px;
+}
+
+/* ============================================================
+   Mode Selector (New Project Form)
+   ============================================================ */
+
+.mode-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.mode-radio {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.mode-radio:has(input:checked) {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: rgba(88, 166, 255, 0.08);
+}
+
+.mode-radio input[type="radio"] {
+    margin: 0;
+    accent-color: var(--accent);
+}
+
+.form-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 4px 0;
+}
+
+/* ============================================================
+   Provisioning Panel
+   ============================================================ */
+
+.provisioning-panel {
+    padding: 16px;
+    background: rgba(123, 79, 212, 0.06);
+    border: 1px solid rgba(123, 79, 212, 0.2);
+    border-radius: var(--radius-card);
+    margin-bottom: 16px;
+}
+
+.provisioning-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.provisioning-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.provisioning-messages {
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.prompt-form-disabled {
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
 }

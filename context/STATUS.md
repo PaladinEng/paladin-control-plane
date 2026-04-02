@@ -2,7 +2,7 @@
 Last verified: 2026-04-02
 
 ## Current State
-All core systems operational and verified via smoke test 2026-04-02. Backend API on port 8080 serving frontend dashboard with GitHub OAuth for public access via Cloudflare Tunnel. Tailscale (10.1.10.x, 100.x.x.x) and localhost bypass authentication. Meta-supervisor running continuously, polling prompt queues every 60s and auto-executing CPO tasks. Overnight timer scheduled for daily execution at 23:00 UTC. ntfy notification service active on port 8090. Archive and restore endpoints fully functional. No blocking issues.
+All core systems operational and verified via smoke test 2026-04-02. Backend API on port 8080 serving frontend dashboard with GitHub OAuth for public access via Cloudflare Tunnel. Tailscale (10.1.10.x, 100.x.x.x) and localhost bypass authentication. Meta-supervisor running continuously, polling prompt queues every 60s and auto-executing CPO tasks. Overnight timer scheduled for daily execution at 23:00 UTC. ntfy notification service active on port 8090. Archive and restore endpoints fully functional. Project creation system v1.1 with 4-mode support complete. No blocking issues.
 
 ## Services
 
@@ -36,6 +36,10 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 - `POST /api/projects/{id}/prompts/upload` — upload .md/.txt file, auto-parse into queued prompts
 - `POST /api/projects/{id}/archive` — archives project, returns `{"status":"archived"}`
 - `POST /api/projects/{id}/restore` — restores project, returns `{"status":"active"}`
+- `POST /api/projects/create` — 4-mode project creation (existing-repo, new-repo, imported-repo, prompted-start)
+- `POST /api/projects/{id}/provisioning-complete` — mark project provisioning status
+- `POST /api/projects/uploads` — brief file upload endpoint
+- `GET /api/system/config` — system configuration endpoint
 
 **Authentication:** GitHub OAuth for public URLs (client ID in systemd env), Tailscale/localhost bypass via TAILSCALE_PREFIXES in auth_service.py
 
@@ -52,6 +56,8 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 **Features:**
 - Home view: cluster health cards, project status grid
 - Project view: queue panel, session log viewer, chat thread, prompt input, needs-input response
+- Project creation modal: 4-mode selection (existing-repo, new-repo, imported-repo, prompted-start)
+- Provisioning status badge with .paladin-config.yaml support
 - Dark theme, mobile-responsive (iPhone Safari tested)
 - SSE-driven live updates
 - Archive/restore functions verified in api.js
@@ -161,8 +167,7 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 
 ## In Progress
 
-- **PCP-011:** Unify ntfy and dashboard thread notifications — in active development
-- **PCP-013:** Batch prompt upload — complete (2026-04-02)
+- **PCP-017:** Project creation system v1.1 — complete (2026-04-02)
 
 ## Blocked
 
@@ -176,12 +181,15 @@ None. All dependencies satisfied.
 ## Session History
 
 - Sessions 001-005 completed (2026-03-30 through 2026-04-01)
-- PCP-001 through PCP-010 completed
+- PCP-001 through PCP-015 completed
 - PCP-011 (PATH fix for Claude CLI in systemd services) merged 2026-04-01
 - Smoke test verification 2026-04-02: all systems operational
 - PCP-013 (batch prompt upload) completed 2026-04-02
+- PCP-014 (spawn new projects) completed 2026-04-02
+- PCP-015 (WORKQUEUE web editor) completed 2026-04-02
+- PCP-017 (project creation system v1.1) completed 2026-04-02
 
 ## Last Updated
 
 Date: 2026-04-02
-Verification Method: Complete smoke test (services, API endpoints, frontend, OAuth, meta-supervisor, overnight timer, ntfy, tunnel, archive/restore)
+Verification Method: Complete smoke test (services, API endpoints, frontend, OAuth, meta-supervisor, overnight timer, ntfy, tunnel, archive/restore, project creation system)

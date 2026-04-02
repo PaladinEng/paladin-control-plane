@@ -12,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse as StarletteJSONResponse
 from starlette.responses import RedirectResponse as StarletteRedirectResponse
 
-from backend.routes import auth, events, health, projects, threads
+from backend.routes import auth, events, health, projects, system, threads
 from backend.services.auth_service import is_authenticated
 
 app = FastAPI(title="Paladin Control Plane", version="0.1.0")
@@ -58,6 +58,7 @@ app.include_router(health.router)
 app.include_router(projects.router)
 app.include_router(events.router)
 app.include_router(threads.router)
+app.include_router(system.router)
 
 # Serve frontend static files
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"

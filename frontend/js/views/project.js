@@ -155,6 +155,7 @@ function statusBadge(status) {
         inactive:      { cls: 'badge-inactive',      label: 'Inactive' },
         running:       { cls: 'badge-running',       label: 'Running' },
         queued:        { cls: 'badge-queued',        label: 'Queued' },
+        provisioning:  { cls: 'badge-provisioning',  label: 'Provisioning' },
     };
     const s = map[status] || { cls: 'badge-idle', label: status || 'Unknown' };
     return `<span class="status-badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;
@@ -535,44 +536,66 @@ function renderProjectData(content, project) {
             ) : ''}
         </div>`;
 
+    // Provisioning progress panel
+    const isProvisioning = project.status === 'provisioning';
+    const provisioningPanel = isProvisioning ? `
+        <div class="provisioning-panel" id="provisioning-panel">
+            <div class="provisioning-header">
+                <span class="status-badge badge-provisioning"><span class="dot"></span>Provisioning</span>
+                <span class="provisioning-text">Project is being set up by Claude Code...</span>
+            </div>
+            <div class="provisioning-messages" id="provisioning-messages">
+                <p class="text-muted" style="font-size:13px">Waiting for progress updates...</p>
+            </div>
+        </div>` : '';
+
     // Chat thread panel
+    const promptFormHtml = isProvisioning ? `
+        <div class="prompt-form-disabled">
+            <p class="text-muted" style="font-size:13px;text-align:center;padding:12px">
+                Prompt input available after provisioning completes
+            </p>
+        </div>` : `
+        <form class="prompt-form" id="prompt-form">
+            <textarea id="prompt-textarea" class="prompt-textarea"
+                placeholder="Send instruction to supervisor..."
+                rows="3"></textarea>
+            <div class="prompt-actions">
+                <span id="prompt-error" class="prompt-error"></span>
+                <button type="submit" id="prompt-submit" class="prompt-submit" disabled>Send</button>
+            </div>
+        </form>
+        <div class="batch-upload-section">
+            <details class="batch-details">
+                <summary class="batch-summary">
+                    Upload batch prompts (.md or .txt)
+                </summary>
+                <div class="batch-body">
+                    <p class="batch-hint">
+                        Each ## section or blank-line paragraph becomes
+                        a separate queued prompt, executed in order.
+                    </p>
+                    <input type="file" id="batch-file-input"
+                           accept=".md,.txt,text/plain,text/markdown"
+                           class="batch-file-input">
+                    <div id="batch-preview" class="batch-preview"></div>
+                    <button id="batch-submit" class="batch-submit"
+                            disabled type="button">
+                        Queue prompts
+                    </button>
+                    <span id="batch-status" class="batch-status"></span>
+                </div>
+            </details>
+        </div>`;
+
     const threadPanel = `
         <div class="thread-panel">
+            ${provisioningPanel}
             <p class="section-title">Chat Thread</p>
             <div class="thread-messages" id="thread-messages">
                 <div class="loading-container"><div class="spinner"></div></div>
             </div>
-            <form class="prompt-form" id="prompt-form">
-                <textarea id="prompt-textarea" class="prompt-textarea"
-                    placeholder="Send instruction to supervisor..."
-                    rows="3"></textarea>
-                <div class="prompt-actions">
-                    <span id="prompt-error" class="prompt-error"></span>
-                    <button type="submit" id="prompt-submit" class="prompt-submit" disabled>Send</button>
-                </div>
-            </form>
-            <div class="batch-upload-section">
-                <details class="batch-details">
-                    <summary class="batch-summary">
-                        Upload batch prompts (.md or .txt)
-                    </summary>
-                    <div class="batch-body">
-                        <p class="batch-hint">
-                            Each ## section or blank-line paragraph becomes
-                            a separate queued prompt, executed in order.
-                        </p>
-                        <input type="file" id="batch-file-input"
-                               accept=".md,.txt,text/plain,text/markdown"
-                               class="batch-file-input">
-                        <div id="batch-preview" class="batch-preview"></div>
-                        <button id="batch-submit" class="batch-submit"
-                                disabled type="button">
-                            Queue prompts
-                        </button>
-                        <span id="batch-status" class="batch-status"></span>
-                    </div>
-                </details>
-            </div>
+            ${promptFormHtml}
         </div>`;
 
     content.innerHTML = `

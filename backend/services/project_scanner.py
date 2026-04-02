@@ -86,8 +86,11 @@ def _determine_status(
             cpo_active = Path.home() / "dev" / "queue" / "active"
             if cpo_active.exists():
                 for task_dir in cpo_active.iterdir():
-                    if task_dir.is_dir() and task_dir.name.startswith(project_id):
-                        return "running"
+                    if task_dir.is_dir():
+                        if task_dir.name.startswith(f"create-{project_id}"):
+                            return "provisioning"
+                        if task_dir.name.startswith(project_id):
+                            return "running"
         except Exception:
             pass
 
@@ -179,13 +182,53 @@ def _scan_project(project_dir: Path) -> Optional[ProjectDetail]:
     )
 
 
+DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
+
+
+def _scan_provisioning_projects(known_ids: set[str]) -> list[ProjectDetail]:
+    """Scan runtime data for projects in provisioning state (not yet in ~/projects/)."""
+    projects: list[ProjectDetail] = []
+    if not DATA_ROOT.exists():
+        return projects
+    try:
+        import json as _json
+
+        for entry in sorted(DATA_ROOT.iterdir()):
+            if not entry.is_dir() or entry.name in known_ids:
+                continue
+            meta_path = entry / "meta.json"
+            if not meta_path.exists():
+                continue
+            try:
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if meta.get("status") != "provisioning":
+                continue
+            projects.append(ProjectDetail(
+                id=entry.name,
+                name=meta.get("name", entry.name),
+                path=meta.get("local_path", str(PROJECTS_ROOT / entry.name)),
+                status="provisioning",
+                current_state=f"Project is being provisioned ({meta.get('mode', 'unknown')} mode)",
+                active_tasks=[],
+                last_updated=meta.get("created_at", ""),
+                archived=False,
+                workqueue_raw="",
+                status_raw="",
+            ))
+    except Exception:
+        pass
+    return projects
+
+
 def scan_all_projects() -> list[ProjectDetail]:
     """Return all projects, using cache if fresh."""
     now = time.monotonic()
     # Use shorter TTL if any project is in an active state
     ttl = CACHE_TTL
     if _cache["data"]:
-        active_states = {"running", "queued", "needs-input"}
+        active_states = {"running", "queued", "needs-input", "provisioning"}
         if any(p.status in active_states for p in _cache["data"]):
             ttl = 10  # refresh faster when work is happening
     if _cache["data"] is not None and (now - _cache["ts"]) < ttl:
@@ -204,6 +247,10 @@ def scan_all_projects() -> list[ProjectDetail]:
                 projects.append(project)
     except Exception:
         pass
+
+    # Also pick up provisioning projects that don't have ~/projects/ dirs yet
+    known_ids = {p.id for p in projects}
+    projects.extend(_scan_provisioning_projects(known_ids))
 
     _cache["ts"] = now
     _cache["data"] = projects

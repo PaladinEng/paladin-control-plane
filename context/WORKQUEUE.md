@@ -66,6 +66,7 @@ done-when:
 - [x] 2026-04-02 PCP-013: Batch prompt upload — file upload (.md/.txt) with ##-section and paragraph parsing, batch/upload endpoints, dashboard UI with preview
 - [x] 2026-04-02 PCP-014: Spawn new projects from dashboard — New Project button, form with project name/repo/description, creates local directory and context files
 - [x] 2026-04-02 PCP-015: WORKQUEUE web editor — add/edit/reprioritize WORKQUEUE items from project view form
+- [x] 2026-04-02 PCP-017: Project creation system v1.1 — 4-mode creation (existing-repo, new-repo, imported-repo, prompted-start), .paladin-config.yaml shared config, provisioning status badge, CPO task generation, file upload for briefs
 - [x] 2026-04-02 FIX: Sequential queue execution — prompts executed in order, not parallel
 - [x] 2026-04-02 FIX: Heartbeat log every poll cycle — supervisor logs heartbeat each poll iteration
 - [x] 2026-04-02 FIX: Poll interval reduced to 30 seconds — faster prompt pickup

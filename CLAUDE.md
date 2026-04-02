@@ -70,7 +70,10 @@ Dashboard prompt -> POST /api/projects/{id}/prompt -> prompt-queue.json
 | POST | /api/projects/{id}/archive | Archive project |
 | POST | /api/projects/{id}/restore | Restore project |
 | GET | /api/projects/{id}/logs/{filename} | Download session log |
-| POST | /api/projects/create | Create new project |
+| POST | /api/projects/create | Create new project (4-mode) |
+| POST | /api/projects/{id}/provisioning-complete | Mark project provisioned |
+| POST | /api/projects/uploads | Upload brief file |
+| GET | /api/system/config | System config (ignore list, compliance) |
 | POST | /api/projects/{id}/workqueue/add | Add workqueue item |
 
 ## Available subagents

@@ -1,12 +1,17 @@
+import json
 import re
-from datetime import date
+import subprocess
+from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+import yaml
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from backend.models.project import ProjectDetail, ProjectSummary
+from backend.routes.events import broadcast_sse
 from backend.services.archive_service import archive_project, restore_project
 from backend.services.project_scanner import (
     get_project_by_id,
@@ -14,6 +19,10 @@ from backend.services.project_scanner import (
     scan_all_projects,
 )
 from backend.services.thread_service import add_prompt
+
+PALADIN_CONFIG_PATH = Path.home() / "projects" / ".paladin-config.yaml"
+UPLOADS_DIR = Path.home() / "paladin-control" / "data" / "uploads"
+CPO_PENDING = Path.home() / "dev" / "queue" / "pending"
 
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -65,76 +74,210 @@ async def restore(project_id: str):
     return result
 
 
-_REPO_RE = re.compile(r"^PaladinEng/[a-zA-Z0-9][a-zA-Z0-9\-]*$")
+def _load_paladin_config() -> dict:
+    """Read .paladin-config.yaml. Returns empty defaults if missing."""
+    if not PALADIN_CONFIG_PATH.exists():
+        return {"ignore_directories": [], "compliance": {}}
+    try:
+        return yaml.safe_load(PALADIN_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {"ignore_directories": [], "compliance": {}}
+
+
+_VALID_MODES = {"existing-repo", "new-repo", "imported-repo", "prompted-start"}
 
 
 class CreateProjectRequest(BaseModel):
+    mode: str
     name: str
-    repo: str
-    description: str
+    owner: str = "PaladinEng"
+    private: bool = True
+    brief: Optional[str] = None
+    brief_file_path: Optional[str] = None
+    github_url: Optional[str] = None
+    description: Optional[str] = None
+    tech_preferences: Optional[str] = None
 
 
 @router.post("/create")
 async def create_project(body: CreateProjectRequest):
-    """Initiate new project creation. Validates inputs, queues a Claude Code task."""
-    if not _REPO_RE.match(body.repo):
-        raise HTTPException(
-            status_code=400,
-            detail="Repo must be PaladinEng/repo-name format",
-        )
+    """Initiate new project creation per spec v1.1 — validates, writes CPO task."""
+    if body.mode not in _VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {body.mode}")
 
-    project_id = body.repo.split("/")[1].lower()
+    # Derive slug from name or github_url
+    if body.mode in ("existing-repo", "imported-repo"):
+        if not body.github_url:
+            raise HTTPException(status_code=400, detail="github_url required for this mode")
+        slug = body.github_url.rstrip("/").split("/")[-1].lower()
+        if slug.endswith(".git"):
+            slug = slug[:-4]
+    else:
+        slug = re.sub(r"[^a-z0-9-]", "-", body.name.lower().strip()).strip("-")
+        if not slug:
+            raise HTTPException(status_code=400, detail="Invalid project name")
 
-    existing = get_project_by_id(project_id)
-    if existing is not None:
+    if not _SLUG_RE.match(slug):
+        raise HTTPException(status_code=400, detail=f"Invalid slug: {slug}")
+
+    # Check ignore list
+    config = _load_paladin_config()
+    ignore_dirs = config.get("ignore_directories", [])
+    if slug in ignore_dirs:
         raise HTTPException(
             status_code=409,
-            detail=f"Project '{project_id}' already exists",
+            detail=f"'{slug}' is in the ignore list and cannot be used as a project name",
         )
 
-    setup_prompt = f"""Set up a new Paladin Robotics project with these details:
+    # Check if project already exists in scanner
+    existing = get_project_by_id(slug)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"Project '{slug}' already exists")
 
-Project name: {body.name}
-GitHub repo: {body.repo}
-Project ID: {project_id}
-Description: {body.description}
+    # Check local directory
+    projects_root = Path.home() / "projects"
+    if (projects_root / slug).exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Directory ~/projects/{slug} already exists",
+        )
 
-Steps:
-1. Clone the repo to ~/projects/{project_id}/:
-   cd ~/projects && git clone git@github.com:{body.repo}.git
+    # Check runtime data
+    runtime_dir = Path.home() / "paladin-control" / "data" / "projects" / slug
+    meta_json = runtime_dir / "meta.json"
+    if meta_json.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Runtime data for '{slug}' already exists",
+        )
 
-2. Create context/ directory with v1.0 schema files:
-   - context/AGENTS.md — session start checklist and rules
-   - context/CONTEXT.md — project purpose and architecture
-   - context/STATUS.md — current state (initial: "Project created, not yet started")
-   - context/DECISIONS.md — empty decisions log with header
-   - context/WORKQUEUE.md — empty workqueue with P1/P2/P3 sections
-   - context/meta.yaml — name: "{body.name}", slug: {project_id}
+    # Build task payload
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    task_id = f"create-{slug}-{timestamp}"
+    payload = {
+        "mode": body.mode,
+        "slug": slug,
+        "name": body.name,
+        "owner": body.owner,
+        "private": body.private,
+        "brief": body.brief,
+        "brief_file_path": body.brief_file_path,
+        "github_url": body.github_url,
+        "description": body.description,
+        "tech_preferences": body.tech_preferences,
+        "task_id": task_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
-3. Create ~/projects/{project_id}/CLAUDE.md with:
-   - Project identity and purpose from the description
-   - Pointer to read context/ files at session start
-   - Standard Paladin architecture invariants
-   - Session end requirements (update STATUS.md, commit, print FINISHED WORK)
+    # Write CPO task to pending queue
+    task_dir = CPO_PENDING / task_id
+    task_dir.mkdir(parents=True, exist_ok=True)
 
-4. Add to ~/projects/WORKQUEUE-MASTER.md — add a new project section
-   with the project name and a note that it is newly created.
+    # Generate the task prompt via create_project.py
+    from supervisor.create_project import generate_creation_prompt
 
-5. Create ~/paladin-control/data/projects/{project_id}/ directory
-   for thread and prompt queue storage.
+    task_prompt = generate_creation_prompt(payload)
+    (task_dir / "task.md").write_text(task_prompt, encoding="utf-8")
+    (task_dir / "payload.json").write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )
+    # Status file for queue runner
+    (task_dir / "status.json").write_text(
+        json.dumps({"status": "pending", "project_id": slug, "task_id": task_id}),
+        encoding="utf-8",
+    )
 
-6. Commit the initial context files to the repo and push.
+    # Create minimal runtime data so project appears immediately as provisioning
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "meta.json").write_text(
+        json.dumps({
+            "id": slug,
+            "name": body.name,
+            "mode": body.mode,
+            "github_url": body.github_url or f"https://github.com/{body.owner}/{slug}",
+            "local_path": str(projects_root / slug),
+            "status": "provisioning",
+            "created_at": payload["created_at"],
+        }, indent=2),
+        encoding="utf-8",
+    )
+    (runtime_dir / "thread.jsonl").write_text("", encoding="utf-8")
+    (runtime_dir / "prompt-queue.json").write_text("[]", encoding="utf-8")
 
-When done, write a summary to the paladin-control-plane thread.
-"""
-    entry = add_prompt("paladin-control-plane", setup_prompt)
+    invalidate_cache()
+    broadcast_sse("status_update", {
+        "project_id": slug,
+        "status": "provisioning",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
 
     return {
-        "status": "queued",
-        "project_id": project_id,
-        "prompt_id": entry["id"],
-        "message": f"Project setup queued. '{project_id}' will appear in dashboard within 2-3 minutes.",
+        "project_id": slug,
+        "task_id": task_id,
+        "status": "provisioning",
     }
+
+
+@router.post("/{project_id}/provisioning-complete")
+async def provisioning_complete(project_id: str):
+    """Called by Claude Code after successful project creation and self-validation."""
+    _validate_project_id(project_id)
+
+    # Update meta.json status to idle
+    runtime_dir = Path.home() / "paladin-control" / "data" / "projects" / project_id
+    meta_json = runtime_dir / "meta.json"
+    if meta_json.exists():
+        try:
+            meta = json.loads(meta_json.read_text(encoding="utf-8"))
+            meta["status"] = "idle"
+            meta_json.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    invalidate_cache()
+    broadcast_sse("status_update", {
+        "project_id": project_id,
+        "status": "idle",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Send ntfy notification
+    try:
+        subprocess.run(
+            [
+                "curl", "-s", "-X", "POST", "http://localhost:8090/paladin-alerts",
+                "-H", f"Title: Project created — {project_id}",
+                "-H", "Priority: default",
+                "-H", "Tags: white_check_mark",
+                "-H", f"Click: https://dashboard.paladinrobotics.com/#/project/{project_id}",
+                "-d", f"Project {project_id} has been provisioned and is ready.",
+            ],
+            timeout=5,
+            capture_output=True,
+        )
+    except Exception:
+        pass
+
+    return {"status": "idle", "project_id": project_id}
+
+
+@router.post("/uploads")
+async def upload_brief(file: UploadFile = File(...)):
+    """Upload a brief file (.md, .txt, .pdf) for prompted-start mode."""
+    filename = file.filename or "brief.txt"
+    allowed_ext = (".md", ".txt", ".pdf")
+    if not any(filename.lower().endswith(ext) for ext in allowed_ext):
+        raise HTTPException(status_code=400, detail="Only .md, .txt, .pdf files accepted")
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
+    dest = UPLOADS_DIR / f"{timestamp}-{safe_name}"
+
+    content = await file.read()
+    dest.write_bytes(content)
+
+    return {"path": str(dest), "filename": safe_name}
 
 
 class AddTaskRequest(BaseModel):

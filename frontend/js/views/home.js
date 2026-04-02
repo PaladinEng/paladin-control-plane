@@ -5,7 +5,7 @@
  * Auto-refreshes on SSE events.
  */
 
-import { getProjects, getHealth, getAuthStatus, archiveProject, restoreProject, createProject } from '../api.js';
+import { getProjects, getHealth, getAuthStatus, archiveProject, restoreProject, createProject, getSystemConfig, uploadBrief } from '../api.js';
 
 let sseRefreshHandler = null;
 
@@ -19,6 +19,7 @@ function statusBadge(status) {
         inactive:    { cls: 'badge-inactive',     label: 'Inactive' },
         running:     { cls: 'badge-running',       label: 'Running' },
         queued:      { cls: 'badge-queued',        label: 'Queued' },
+        provisioning:{ cls: 'badge-provisioning',  label: 'Provisioning' },
     };
     const s = map[status] || { cls: 'badge-idle', label: status || 'Unknown' };
     return `<span class="status-badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;
@@ -109,26 +110,19 @@ function renderNewProjectForm() {
     return `
     <div class="new-project-form" id="new-project-form">
         <h3 class="form-title">New project</h3>
-        <div class="form-fields">
-            <div class="form-field">
-                <label>Display name</label>
-                <input type="text" id="np-name"
-                       placeholder="e.g. Dark Sun RAG"
-                       autocomplete="off">
-            </div>
-            <div class="form-field">
-                <label>GitHub repo</label>
-                <input type="text" id="np-repo"
-                       placeholder="PaladinEng/repo-name"
-                       autocomplete="off">
-            </div>
-            <div class="form-field">
-                <label>Description</label>
-                <input type="text" id="np-desc"
-                       placeholder="One sentence description"
-                       autocomplete="off">
+
+        <div class="form-field">
+            <label>Creation mode</label>
+            <div class="mode-selector" id="np-mode-selector">
+                <label class="mode-radio"><input type="radio" name="np-mode" value="existing-repo"> Existing repo</label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="new-repo" checked> New repo</label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="imported-repo"> Import repo</label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="prompted-start"> From brief</label>
             </div>
         </div>
+
+        <div class="form-fields" id="np-mode-fields"></div>
+
         <div class="form-actions">
             <button id="np-cancel" class="btn-secondary" type="button">Cancel</button>
             <button id="np-submit" class="btn-primary" type="button" disabled>
@@ -136,50 +130,234 @@ function renderNewProjectForm() {
             </button>
         </div>
         <p id="np-status" class="form-status"></p>
+        <p id="np-ignore-warn" class="form-status" style="color:#ea580c"></p>
     </div>`;
 }
+
+const MODE_FIELDS = {
+    'existing-repo': `
+        <div class="form-field">
+            <label>GitHub URL</label>
+            <input type="text" id="np-github-url" placeholder="https://github.com/PaladinEng/repo-name" autocomplete="off">
+        </div>
+        <div class="form-field">
+            <label>Display name (optional)</label>
+            <input type="text" id="np-name" placeholder="Defaults to repo name" autocomplete="off">
+        </div>
+        <div class="form-field">
+            <label>Description (optional)</label>
+            <input type="text" id="np-desc" placeholder="One sentence description" autocomplete="off">
+        </div>`,
+    'new-repo': `
+        <div class="form-field">
+            <label>Project name / slug</label>
+            <input type="text" id="np-name" placeholder="e.g. dark-sun-rag" autocomplete="off">
+        </div>
+        <div class="form-field">
+            <label>Owner</label>
+            <select id="np-owner"><option value="PaladinEng">PaladinEng</option><option value="personal">Personal</option></select>
+        </div>
+        <div class="form-field">
+            <label>Brief (1-3 paragraphs)</label>
+            <textarea id="np-brief" rows="3" placeholder="Describe the project..."></textarea>
+        </div>
+        <div class="form-field">
+            <label><input type="checkbox" id="np-private" checked> Private repo</label>
+        </div>`,
+    'imported-repo': `
+        <div class="form-field">
+            <label>GitHub URL (upstream)</label>
+            <input type="text" id="np-github-url" placeholder="https://github.com/org/repo" autocomplete="off">
+        </div>
+        <div class="form-field">
+            <label>Display name (optional)</label>
+            <input type="text" id="np-name" placeholder="Defaults to repo name" autocomplete="off">
+        </div>
+        <div class="form-field">
+            <label>Brief / context (optional)</label>
+            <textarea id="np-brief" rows="2" placeholder="Additional context for Claude..."></textarea>
+        </div>`,
+    'prompted-start': `
+        <div class="form-field">
+            <label>Project name / slug</label>
+            <input type="text" id="np-name" placeholder="e.g. inventory-service" autocomplete="off">
+        </div>
+        <div class="form-field">
+            <label>Owner</label>
+            <select id="np-owner"><option value="PaladinEng">PaladinEng</option><option value="personal">Personal</option></select>
+        </div>
+        <div class="form-field">
+            <label><input type="checkbox" id="np-private" checked> Private repo</label>
+        </div>
+        <div class="form-field">
+            <label>Brief</label>
+            <textarea id="np-brief" rows="4" placeholder="Describe what to build..."></textarea>
+            <p class="form-hint">Or upload a file:</p>
+            <input type="file" id="np-brief-file" accept=".md,.txt,.pdf">
+            <span id="np-file-status" class="form-status"></span>
+        </div>
+        <div class="form-field">
+            <label>Tech preferences (optional)</label>
+            <input type="text" id="np-tech" placeholder="e.g. FastAPI, PostgreSQL, vanilla JS" autocomplete="off">
+        </div>`,
+};
+
+let _ignoreDirectories = [];
+let _briefFilePath = null;
 
 function setupNewProjectForm() {
     const cancelBtn = document.getElementById('np-cancel');
     const submitBtn = document.getElementById('np-submit');
-    const nameInput = document.getElementById('np-name');
-    const repoInput = document.getElementById('np-repo');
-    const descInput = document.getElementById('np-desc');
     const statusEl = document.getElementById('np-status');
-    if (!cancelBtn || !submitBtn) return;
+    const ignoreWarn = document.getElementById('np-ignore-warn');
+    const modeFields = document.getElementById('np-mode-fields');
+    if (!cancelBtn || !submitBtn || !modeFields) return;
 
-    function validate() {
-        const name = nameInput?.value.trim();
-        const repo = repoInput?.value.trim();
-        const desc = descInput?.value.trim();
-        const repoValid = /^PaladinEng\/[a-zA-Z0-9][a-zA-Z0-9\-]*$/.test(repo);
-        submitBtn.disabled = !(name && repoValid && desc);
+    _briefFilePath = null;
+
+    // Load ignore list
+    getSystemConfig().then(cfg => {
+        _ignoreDirectories = cfg.ignore_directories || [];
+    }).catch(() => { _ignoreDirectories = []; });
+
+    function getMode() {
+        const checked = document.querySelector('input[name="np-mode"]:checked');
+        return checked ? checked.value : 'new-repo';
     }
 
-    [nameInput, repoInput, descInput].forEach(el =>
-        el?.addEventListener('input', validate)
-    );
+    function renderModeFields() {
+        const mode = getMode();
+        modeFields.innerHTML = MODE_FIELDS[mode] || '';
+        _briefFilePath = null;
+        if (ignoreWarn) ignoreWarn.textContent = '';
+        setupSlugValidation();
+        setupBriefFileUpload();
+        validate();
+    }
+
+    function getSlug() {
+        const mode = getMode();
+        if (mode === 'existing-repo' || mode === 'imported-repo') {
+            const url = document.getElementById('np-github-url')?.value.trim() || '';
+            let slug = url.replace(/\/$/, '').split('/').pop() || '';
+            if (slug.endsWith('.git')) slug = slug.slice(0, -4);
+            return slug.toLowerCase();
+        }
+        const name = document.getElementById('np-name')?.value.trim() || '';
+        return name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
+    }
+
+    function setupSlugValidation() {
+        const nameEl = document.getElementById('np-name');
+        const urlEl = document.getElementById('np-github-url');
+        const target = nameEl || urlEl;
+        if (!target) return;
+        target.addEventListener('blur', () => {
+            const slug = getSlug();
+            if (ignoreWarn) {
+                if (slug && _ignoreDirectories.includes(slug)) {
+                    ignoreWarn.textContent = `"${slug}" is in the ignore list and cannot be used.`;
+                } else {
+                    ignoreWarn.textContent = '';
+                }
+            }
+            validate();
+        });
+        target.addEventListener('input', validate);
+    }
+
+    function setupBriefFileUpload() {
+        const fileInput = document.getElementById('np-brief-file');
+        const fileStatus = document.getElementById('np-file-status');
+        if (!fileInput) return;
+
+        fileInput.addEventListener('change', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+            if (fileStatus) fileStatus.textContent = 'Uploading...';
+            try {
+                const result = await uploadBrief(file);
+                _briefFilePath = result.path;
+                if (fileStatus) fileStatus.textContent = `Uploaded: ${result.filename}`;
+                // Clear brief textarea since file replaces it
+                const brief = document.getElementById('np-brief');
+                if (brief) brief.value = '';
+                validate();
+            } catch (err) {
+                if (fileStatus) fileStatus.textContent = `Error: ${err.message}`;
+                _briefFilePath = null;
+            }
+        });
+    }
+
+    function validate() {
+        const mode = getMode();
+        const slug = getSlug();
+        if (_ignoreDirectories.includes(slug)) { submitBtn.disabled = true; return; }
+
+        let valid = false;
+        if (mode === 'existing-repo') {
+            const url = document.getElementById('np-github-url')?.value.trim();
+            valid = !!url && url.startsWith('http');
+        } else if (mode === 'new-repo') {
+            const name = document.getElementById('np-name')?.value.trim();
+            const brief = document.getElementById('np-brief')?.value.trim();
+            valid = !!name && !!brief;
+        } else if (mode === 'imported-repo') {
+            const url = document.getElementById('np-github-url')?.value.trim();
+            valid = !!url && url.startsWith('http');
+        } else if (mode === 'prompted-start') {
+            const name = document.getElementById('np-name')?.value.trim();
+            const brief = document.getElementById('np-brief')?.value.trim();
+            valid = !!name && (!!brief || !!_briefFilePath);
+        }
+        submitBtn.disabled = !valid;
+    }
+
+    // Wire mode radios
+    document.querySelectorAll('input[name="np-mode"]').forEach(radio => {
+        radio.addEventListener('change', renderModeFields);
+    });
+
+    // Initial render
+    renderModeFields();
 
     cancelBtn.addEventListener('click', () => {
         document.getElementById('new-project-form')?.remove();
     });
 
     submitBtn.addEventListener('click', async () => {
-        const name = nameInput.value.trim();
-        const repo = repoInput.value.trim();
-        const description = descInput.value.trim();
+        const mode = getMode();
+        const slug = getSlug();
+
+        // Final ignore list check
+        if (_ignoreDirectories.includes(slug)) {
+            if (statusEl) statusEl.textContent = `"${slug}" is in the ignore list.`;
+            return;
+        }
+
+        const payload = { mode };
+        payload.name = document.getElementById('np-name')?.value.trim() || slug;
+        payload.owner = document.getElementById('np-owner')?.value || 'PaladinEng';
+        payload.private = document.getElementById('np-private')?.checked ?? true;
+        payload.brief = document.getElementById('np-brief')?.value.trim() || null;
+        payload.brief_file_path = _briefFilePath || null;
+        payload.github_url = document.getElementById('np-github-url')?.value.trim() || null;
+        payload.description = document.getElementById('np-desc')?.value.trim() || null;
+        payload.tech_preferences = document.getElementById('np-tech')?.value.trim() || null;
 
         submitBtn.disabled = true;
         submitBtn.textContent = 'Creating...';
         if (statusEl) statusEl.textContent = '';
 
         try {
-            const data = await createProject(name, repo, description);
-            if (statusEl) statusEl.textContent = `\u2713 ${data.message}`;
+            const data = await createProject(payload);
+            if (statusEl) statusEl.textContent = 'Project creation started';
             submitBtn.textContent = 'Created';
-            setTimeout(() =>
-                document.getElementById('new-project-form')?.remove(), 3000
-            );
+            // Navigate to the new project detail view
+            setTimeout(() => {
+                window.location.hash = `#/project/${encodeURIComponent(data.project_id)}`;
+            }, 500);
         } catch (err) {
             if (statusEl) statusEl.textContent = `Error: ${err.message}`;
             submitBtn.disabled = false;
