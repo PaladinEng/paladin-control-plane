@@ -29,6 +29,23 @@ class NeedsInputRequest(BaseModel):
 _subscribers: list[asyncio.Queue] = []
 
 
+def broadcast_sse(event_type: str, payload: dict) -> None:
+    """Broadcast an SSE event to all connected subscribers."""
+    data = json.dumps({**payload, "type": event_type})
+    message = f"event: {event_type}\ndata: {data}\n\n"
+    dead: list[asyncio.Queue] = []
+    for q in _subscribers:
+        try:
+            q.put_nowait(message)
+        except asyncio.QueueFull:
+            dead.append(q)
+    for q in dead:
+        try:
+            _subscribers.remove(q)
+        except ValueError:
+            pass
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -133,22 +150,9 @@ async def request_input(project_id: str, body: NeedsInputRequest):
 
     # Broadcast SSE events
     for event_type in ("thread_update", "status_update"):
-        payload = json.dumps({
-            "type": event_type,
+        broadcast_sse(event_type, {
             "project_id": project_id,
             "timestamp": _now_iso(),
         })
-        sse_message = f"event: {event_type}\ndata: {payload}\n\n"
-        dead: list[asyncio.Queue] = []
-        for q in _subscribers:
-            try:
-                q.put_nowait(sse_message)
-            except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            try:
-                _subscribers.remove(q)
-            except ValueError:
-                pass
 
     return entry

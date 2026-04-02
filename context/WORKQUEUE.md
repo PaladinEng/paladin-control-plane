@@ -1,67 +1,27 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02T01:10Z
+Last updated: 2026-04-02T04:05Z
 
 ## Active Sprint
 
-### [PCP-011] Unify notifications, timeout handling, Claude hang detection
-project: paladin-control-plane
-parallel: NO
-blast-radius: NONE
-overnight-ready: YES
-preconditions: PCP-009 complete
-done-when:
-  - Every ntfy notification also appears as a thread event entry
-  - Every thread event also triggers an ntfy push notification
-  - Timeout failures write distinct "timed out after 30 min" thread entry
-  - Timeout failures send high-priority ntfy notification
-  - Claude hang detection: if active queue task has no file activity for
-    30 minutes, kill the process and move task to failed with notification
-  - Single unified notify() function in poll_prompts.py handles both channels
-  - Hang detector checks git commit timestamps before marking prompts for retry
-  - Prompts marked handled before execution (prevents restart duplicates)
-  - queue-run-codex.sh timeout wrapper (1800s) prevents indefinite process hang
-  - FINISHED WORK signal detection in queue runner for reliable completion
-  - Task.md exit instruction added to both dashboard and overnight templates
-  - Hang detector threshold reduced to 10 minutes (timeout wrapper is the hard cap)
+(empty — all PCP items complete)
 
 ## P3 Backlog
 
-### [PCP-012] Session log download from dashboard
+### Code quality fixes from session 003 review
 project: paladin-control-plane
 parallel: YES
 blast-radius: NONE
 overnight-ready: YES
-preconditions: PCP-003 complete
+preconditions: none
 done-when:
-  - Session log filenames in project view are clickable download links
-  - GET /api/projects/{id}/logs/{filename} serves the raw log file
-  - Works on mobile (iOS Safari download)
+  - Path traversal guards on all file-serving endpoints
+  - Atomic writes for thread.jsonl and prompt-queue.json
+  - Dead code removed from project_scanner.py
 
-### [PCP-014] Spawn new projects from dashboard
-project: paladin-control-plane
-parallel: NO
-blast-radius: LOW
-overnight-ready: YES
-preconditions: PCP-003 complete
-done-when:
-  - New Project button on home view
-  - Form accepts: project name, GitHub repo (PaladinEng/repo-name),
-    project description
-  - Creates local directory, clones repo, creates context files from
-    paladin-context-system template, adds to WORKQUEUE-MASTER.md,
-    registers with API scanner
-  - New project appears in dashboard within 60 seconds
-
-### [PCP-015] WORKQUEUE web editor
-project: paladin-control-plane
-parallel: YES
-blast-radius: NONE
-overnight-ready: YES
-preconditions: PCP-003 complete
-done-when:
-  - Form in project view to add/edit/reprioritize WORKQUEUE items
-  - Writes directly to project context/WORKQUEUE.md
-  - Changes reflected in dashboard on next refresh
+### Future enhancements
+- Mobile push notification improvements
+- Dashboard search/filter for projects
+- Session log viewer with syntax highlighting
 
 ## Blocked
 - Nothing blocked
@@ -84,4 +44,13 @@ done-when:
 - [x] 2026-04-01 PCP-010: Add project archive and restore — archive/restore buttons, collapsed section on home view
 - [x] 2026-04-01 PCP-011: Fix claude CLI PATH — systemd override adds ~/.npm-global/bin to PATH, queue-run-codex.sh uses CLAUDE_BIN fallback, end-to-end test passed
 - [x] 2026-04-02 PCP-011a: Morning briefing (superseded by PCP-009) — functionality covered by PCP-009 overnight timer and ntfy notifications
+- [x] 2026-04-02 PCP-011: Unify notifications, timeout handling, hang detection — unified notify(), timeout thread entries, hang detector with git commit check, prompt pre-marking, FINISHED WORK signal, exit instruction in task templates, 10-min hang threshold
+- [x] 2026-04-02 PCP-012: Session log download — clickable download links in project view, GET /api/projects/{id}/logs/{filename} endpoint
 - [x] 2026-04-02 PCP-013: Batch prompt upload — file upload (.md/.txt) with ##-section and paragraph parsing, batch/upload endpoints, dashboard UI with preview
+- [x] 2026-04-02 PCP-014: Spawn new projects from dashboard — New Project button, form with project name/repo/description, creates local directory and context files
+- [x] 2026-04-02 PCP-015: WORKQUEUE web editor — add/edit/reprioritize WORKQUEUE items from project view form
+- [x] 2026-04-02 FIX: Sequential queue execution — prompts executed in order, not parallel
+- [x] 2026-04-02 FIX: Heartbeat log every poll cycle — supervisor logs heartbeat each poll iteration
+- [x] 2026-04-02 FIX: Poll interval reduced to 30 seconds — faster prompt pickup
+- [x] 2026-04-02 FIX: Runtime status (running/queued/idle) — dashboard shows live execution state
+- [x] 2026-04-02 FIX: StreamHandler removed, log dedup fixed — no more duplicate log lines

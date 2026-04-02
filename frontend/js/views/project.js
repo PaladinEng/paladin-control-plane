@@ -153,6 +153,8 @@ function statusBadge(status) {
         'needs-input': { cls: 'badge-needs-input',  label: 'Needs Input' },
         idle:          { cls: 'badge-idle',          label: 'Idle' },
         inactive:      { cls: 'badge-inactive',      label: 'Inactive' },
+        running:       { cls: 'badge-running',       label: 'Running' },
+        queued:        { cls: 'badge-queued',        label: 'Queued' },
     };
     const s = map[status] || { cls: 'badge-idle', label: status || 'Unknown' };
     return `<span class="status-badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;
@@ -409,15 +411,16 @@ function setupNeedsInputHandlers(projectId) {
         btn.addEventListener('click', async () => {
             const content = textarea.value.trim();
             if (!content) return;
-            btn.disabled = true;
+            btn.disabled = true;  // disable immediately, do not re-enable on success
             btn.textContent = 'Sending...';
             if (errorEl) errorEl.textContent = '';
             try {
                 await postResponse(projectId, content);
                 await loadThread(projectId);
+                // button stays disabled — thread reloads showing resolved state
             } catch (err) {
                 if (errorEl) errorEl.textContent = `Error: ${err.message}`;
-                btn.disabled = false;
+                btn.disabled = false;  // only re-enable on error
                 btn.textContent = 'Respond';
             }
         });

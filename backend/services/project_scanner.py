@@ -63,11 +63,14 @@ def _determine_status(
     status_md: str, workqueue_md: Optional[str], project_id: str = ""
 ) -> str:
     """
-    Determine project status:
-    - 'needs-input' if there is an unresponded needs-input entry in thread
-    - 'active'      if workqueue has unchecked Active Sprint items
+    Determine project status in priority order:
+    - 'needs-input' if unresponded needs-input entry in thread
+    - 'running'     if CPO active/ has a task for this project
+    - 'queued'      if prompt-queue.json has unhandled prompts
+    - 'active'      if WORKQUEUE.md has unchecked Active Sprint items
     - 'idle'        otherwise
     """
+    # 1. Check needs-input (existing logic)
     if project_id:
         try:
             from backend.services.thread_service import get_pending_input_request
@@ -77,6 +80,28 @@ def _determine_status(
         except Exception:
             pass
 
+    # 2. Check CPO active queue for this project
+    if project_id:
+        try:
+            cpo_active = Path.home() / "dev" / "queue" / "active"
+            if cpo_active.exists():
+                for task_dir in cpo_active.iterdir():
+                    if task_dir.is_dir() and task_dir.name.startswith(project_id):
+                        return "running"
+        except Exception:
+            pass
+
+    # 3. Check prompt queue for unhandled prompts
+    if project_id:
+        try:
+            from backend.services.thread_service import get_prompt_queue
+
+            if get_prompt_queue(project_id):
+                return "queued"
+        except Exception:
+            pass
+
+    # 4. Check WORKQUEUE.md Active Sprint
     if workqueue_md:
         active_tasks = _extract_active_tasks(workqueue_md)
         if active_tasks:
@@ -157,7 +182,13 @@ def _scan_project(project_dir: Path) -> Optional[ProjectDetail]:
 def scan_all_projects() -> list[ProjectDetail]:
     """Return all projects, using cache if fresh."""
     now = time.monotonic()
-    if _cache["data"] is not None and (now - _cache["ts"]) < CACHE_TTL:
+    # Use shorter TTL if any project is in an active state
+    ttl = CACHE_TTL
+    if _cache["data"]:
+        active_states = {"running", "queued", "needs-input"}
+        if any(p.status in active_states for p in _cache["data"]):
+            ttl = 10  # refresh faster when work is happening
+    if _cache["data"] is not None and (now - _cache["ts"]) < ttl:
         return _cache["data"]
 
     projects: list[ProjectDetail] = []

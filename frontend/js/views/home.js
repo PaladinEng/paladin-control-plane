@@ -17,6 +17,8 @@ function statusBadge(status) {
         'needs-input': { cls: 'badge-needs-input', label: 'Needs Input' },
         idle:        { cls: 'badge-idle',         label: 'Idle' },
         inactive:    { cls: 'badge-inactive',     label: 'Inactive' },
+        running:     { cls: 'badge-running',       label: 'Running' },
+        queued:      { cls: 'badge-queued',        label: 'Queued' },
     };
     const s = map[status] || { cls: 'badge-idle', label: status || 'Unknown' };
     return `<span class="status-badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;

@@ -11,11 +11,17 @@ Prints the response content to stdout on success, exits 1 on timeout.
 """
 
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+DATA_ROOT = Path(
+    os.environ.get("PALADIN_DATA_ROOT",
+    str(Path.home() / "paladin-control" / "data" / "projects"))
+)
 
 
 def main():
@@ -53,15 +59,7 @@ def main():
 
     # Poll for response file
     elapsed = 0
-    response_file = (
-        Path.home()
-        / "paladin-control"
-        / "data"
-        / "projects"
-        / project_id
-        / "responses"
-        / f"{entry_id}.json"
-    )
+    response_file = DATA_ROOT / project_id / "responses" / f"{entry_id}.json"
 
     while elapsed < max_wait:
         time.sleep(poll_interval)

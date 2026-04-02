@@ -7,7 +7,6 @@ POST /api/projects/{id}/prompts/batch  — submit multiple prompts
 POST /api/projects/{id}/prompts/upload — upload .md/.txt file of prompts
 """
 
-import asyncio
 import json
 import re
 from datetime import datetime, timezone
@@ -15,6 +14,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
 
+from backend.routes.events import broadcast_sse
 from backend.utils.prompt_parser import parse_prompts
 
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -57,32 +57,9 @@ async def submit_prompt(project_id: str, body: PromptRequest, request: Request):
         raise HTTPException(status_code=400, detail="Content must not be empty")
 
     entry = add_prompt(project_id, body.content.strip())
-    _broadcast_sse("thread_update", project_id)
+    broadcast_sse("thread_update", {"project_id": project_id,
+        "timestamp": datetime.now(timezone.utc).isoformat()})
     return entry
-
-
-def _broadcast_sse(event_type: str, project_id: str) -> None:
-    """Broadcast an SSE event to all subscribers."""
-    from backend.routes.events import _subscribers
-
-    payload = json.dumps({
-        "type": event_type,
-        "project_id": project_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
-    sse_message = f"event: {event_type}\ndata: {payload}\n\n"
-
-    dead: list[asyncio.Queue] = []
-    for q in _subscribers:
-        try:
-            q.put_nowait(sse_message)
-        except asyncio.QueueFull:
-            dead.append(q)
-    for q in dead:
-        try:
-            _subscribers.remove(q)
-        except ValueError:
-            pass
 
 
 @router.post("/{project_id}/respond")
@@ -97,8 +74,8 @@ async def submit_response_endpoint(
     pending = get_pending_input_request(project_id)
     if pending is None:
         raise HTTPException(
-            status_code=404,
-            detail="No pending needs-input request for this project",
+            status_code=409,
+            detail="No pending needs-input request — already responded?",
         )
 
     response_entry = submit_response(project_id, pending["id"], body.content.strip())
@@ -107,8 +84,8 @@ async def submit_response_endpoint(
     from backend.services.project_scanner import invalidate_cache
     invalidate_cache()
 
-    _broadcast_sse("thread_update", project_id)
-    _broadcast_sse("status_update", project_id)
+    broadcast_sse("thread_update", {"project_id": project_id, "timestamp": datetime.now(timezone.utc).isoformat()})
+    broadcast_sse("status_update", {"project_id": project_id, "timestamp": datetime.now(timezone.utc).isoformat()})
 
     return response_entry
 
@@ -141,7 +118,7 @@ async def submit_batch_prompts(
         entry = add_prompt(project_id, content)
         entries.append(entry)
 
-    _broadcast_sse("thread_update", project_id)
+    broadcast_sse("thread_update", {"project_id": project_id, "timestamp": datetime.now(timezone.utc).isoformat()})
 
     return {
         "queued": len(entries),
@@ -185,7 +162,7 @@ async def upload_prompt_file(
         entry = add_prompt(project_id, p)
         entries.append(entry)
 
-    _broadcast_sse("thread_update", project_id)
+    broadcast_sse("thread_update", {"project_id": project_id, "timestamp": datetime.now(timezone.utc).isoformat()})
 
     return {
         "queued": len(entries),
