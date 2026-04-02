@@ -57,3 +57,40 @@ export async function postPrompt(projectId, content) {
     if (!res.ok) throw new Error(`Failed to send prompt: ${res.status}`);
     return res.json();
 }
+
+export async function archiveProject(projectId) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/archive`, {
+        method: 'POST',
+    });
+    if (!res.ok) throw new Error(`Failed to archive project: ${res.status}`);
+    return res.json();
+}
+
+export async function restoreProject(projectId) {
+    const res = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(projectId)}/restore`, {
+        method: 'POST',
+    });
+    if (!res.ok) throw new Error(`Failed to restore project: ${res.status}`);
+    return res.json();
+}
+
+export async function createProject(name, repo, description) {
+    const res = await fetch(`${API_BASE}/api/projects/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, repo, description }),
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Failed to create project: ${res.status}`);
+    }
+    return res.json();
+}
+
+export async function getProjectLogs(projectId) {
+    const res = await fetch(
+        `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/logs`
+    );
+    if (!res.ok) throw new Error(`Failed to load logs: ${res.status}`);
+    return res.json();
+}

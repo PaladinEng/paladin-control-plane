@@ -1333,6 +1333,72 @@ pre code {
     padding-top: 16px;
 }
 
+/* New Project Form */
+.new-project-btn {
+    padding: 6px 14px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.new-project-btn:hover { background: var(--surface); }
+
+.new-project-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+.form-title { font-size: 15px; font-weight: 500; margin-bottom: 16px; color: var(--text-primary); }
+.form-fields { display: flex; flex-direction: column; gap: 12px; }
+.form-field { display: flex; flex-direction: column; gap: 4px; }
+.form-field label { font-size: 12px; color: var(--text-secondary); }
+.form-field input {
+    padding: 8px 10px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: var(--font);
+}
+.form-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.form-actions { display: flex; gap: 10px; margin-top: 16px; }
+.btn-primary {
+    padding: 7px 18px;
+    border-radius: var(--radius-btn);
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: var(--font);
+}
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-secondary {
+    padding: 7px 18px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--font);
+}
+.btn-secondary:hover { background: var(--surface-hover); }
+.form-status {
+    font-size: 12px;
+    margin-top: 10px;
+    color: var(--text-secondary);
+}
+
 /* Error display */
 .error-banner {
     padding: 12px 16px;

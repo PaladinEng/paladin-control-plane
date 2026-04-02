@@ -12,6 +12,7 @@ from typing import Optional
 import yaml
 
 from backend.models.project import ProjectDetail, ProjectSummary
+from backend.services.archive_service import is_archived
 
 PROJECTS_ROOT = Path.home() / "projects"
 CACHE_TTL = 30  # seconds
@@ -145,6 +146,7 @@ def _scan_project(project_dir: Path) -> Optional[ProjectDetail]:
         current_state=_extract_current_state(status_raw) if status_raw else "",
         active_tasks=_extract_active_tasks(workqueue_raw) if workqueue_raw else [],
         last_updated=last_updated,
+        archived=is_archived(project_id),
         workqueue_raw=workqueue_raw,
         status_raw=status_raw,
         decisions_raw=decisions_raw,
