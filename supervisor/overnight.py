@@ -27,7 +27,12 @@ CPO_PENDING = Path.home() / "dev" / "queue" / "pending"
 CPO_SCRIPT = (Path.home() / "projects" / "codex-project-orchestrator"
               / "scripts" / "queue-worker-full-pass.sh")
 NOTIFY_FILE = Path.home() / "projects" / "NOTIFY.md"
-DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from backend.config import DATA_ROOT  # noqa: E402
+
 LOG_DIR = Path.home() / "projects" / "paladin-control-plane" / "logs"
 
 

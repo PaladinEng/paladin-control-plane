@@ -8,8 +8,9 @@ import json
 import re
 from pathlib import Path
 
+from backend.config import DATA_ROOT
+
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
 
 
 def _state_path(project_id: str) -> Path:

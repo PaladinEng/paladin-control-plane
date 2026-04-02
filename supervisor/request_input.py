@@ -11,17 +11,18 @@ Prints the response content to stdout on success, exits 1 on timeout.
 """
 
 import json
-import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-DATA_ROOT = Path(
-    os.environ.get("PALADIN_DATA_ROOT",
-    str(Path.home() / "paladin-control" / "data" / "projects"))
-)
+# Add project root so we can import backend.config
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from backend.config import DATA_ROOT  # noqa: E402
 
 
 def main():

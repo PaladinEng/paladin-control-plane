@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from backend.models.project import ProjectDetail, ProjectSummary
 from backend.routes.events import broadcast_sse
+from backend.config import DATA_ROOT
 from backend.services.archive_service import archive_project, restore_project
 from backend.services.project_scanner import (
     get_project_by_id,
@@ -143,7 +144,7 @@ async def create_project(body: CreateProjectRequest):
         )
 
     # Check runtime data
-    runtime_dir = Path.home() / "paladin-control" / "data" / "projects" / slug
+    runtime_dir = DATA_ROOT / slug
     meta_json = runtime_dir / "meta.json"
     if meta_json.exists():
         raise HTTPException(
@@ -224,7 +225,7 @@ async def provisioning_complete(project_id: str):
     _validate_project_id(project_id)
 
     # Update meta.json status to idle
-    runtime_dir = Path.home() / "paladin-control" / "data" / "projects" / project_id
+    runtime_dir = DATA_ROOT / project_id
     meta_json = runtime_dir / "meta.json"
     if meta_json.exists():
         try:

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
+from backend.config import DATA_ROOT
 
 
 def _project_dir(project_id: str) -> Path:

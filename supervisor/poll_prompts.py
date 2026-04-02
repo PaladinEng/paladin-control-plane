@@ -42,7 +42,7 @@ _retry_delays = [0, 60, 120, 300, 600]  # seconds between retries (exponential b
 _last_retry_time: dict[str, float] = {}  # project_id -> last retry timestamp
 
 # Configuration
-DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
+from backend.config import DATA_ROOT
 QUEUE_ROOT = Path.home() / "dev" / "queue" / "pending"
 POLL_INTERVAL = 30  # seconds
 PID_FILE = Path.home() / "paladin-control" / "supervisor.pid"

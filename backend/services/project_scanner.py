@@ -182,7 +182,7 @@ def _scan_project(project_dir: Path) -> Optional[ProjectDetail]:
     )
 
 
-DATA_ROOT = Path.home() / "paladin-control" / "data" / "projects"
+from backend.config import DATA_ROOT
 
 
 def _scan_provisioning_projects(known_ids: set[str]) -> list[ProjectDetail]:

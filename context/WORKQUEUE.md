@@ -77,3 +77,4 @@ done-when:
 - [x] 2026-04-02 FIX: CPO retry path — exponential backoff (0/60/120/300/600s), max 5 attempts, manual-only warning in queue-handoff.sh, hang detector with exponential backoff in poll_prompts.py
 - [x] 2026-04-02 PCP-016: Fix SSE broadcast code duplication — extracted broadcast_project_update() helper, eliminated duplicate broadcast logic from publish_event and all route files
 - [x] 2026-04-02 PCP-017b: Fix respond endpoint double-tap race — submit_response checks already-responded atomically, returns 409 on duplicate, frontend button disabled on click
+- [x] 2026-04-02 PCP-018: Fix hardcoded DATA_ROOT paths — created backend/config.py as single source of truth, all 6 files (3 backend services, 1 route, 2 supervisor scripts) import from it, supports PALADIN_DATA_ROOT env var override
