@@ -192,6 +192,7 @@ None. All dependencies satisfied.
 - PCP-017 (project creation system v1.1) completed 2026-04-02
 - Session 2026-04-02: Fixed CPO retry path issues — exponential backoff, max retry limit, manual-only warning
 - Overnight 2026-04-02: PCP-016 — SSE broadcast code duplication fixed, broadcast_project_update() helper extracted
+- Overnight 2026-04-02: PCP-017b — Respond endpoint double-tap race fixed, atomic check-and-set in submit_response
 
 ## Last Updated
 

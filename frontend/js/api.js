@@ -38,6 +38,7 @@ export async function postResponse(projectId, content) {
             body: JSON.stringify({ content }),
         }
     );
+    if (res.status === 409) throw new Error('Already responded');
     if (!res.ok) throw new Error(`Failed to submit response: ${res.status}`);
     return res.json();
 }

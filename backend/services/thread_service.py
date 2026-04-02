@@ -164,11 +164,37 @@ def get_pending_input_request(project_id: str) -> dict | None:
     return None
 
 
-def submit_response(project_id: str, entry_id: str, response_content: str) -> dict:
+def submit_response(
+    project_id: str, entry_id: str, response_content: str
+) -> dict | None:
     """
     Mark a needs-input entry as responded and write the response file.
     Response written to: ~/paladin-control/data/projects/{project_id}/responses/{entry_id}.json
+
+    Returns None if the entry was already responded (double-tap race guard).
     """
+    # Atomically check-and-set: read thread, verify not already responded,
+    # then mark responded — all in one file read/write cycle.
+    thread_file = _project_dir(project_id) / "thread.jsonl"
+    already_responded = False
+    if thread_file.exists():
+        lines = thread_file.read_text(encoding="utf-8").splitlines()
+        updated_lines = []
+        for line in lines:
+            try:
+                entry = json.loads(line)
+                if entry.get("id") == entry_id:
+                    if entry.get("responded", False):
+                        already_responded = True
+                    entry["responded"] = True
+                updated_lines.append(json.dumps(entry))
+            except json.JSONDecodeError:
+                updated_lines.append(line)
+        thread_file.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+
+    if already_responded:
+        return None
+
     # Write response file for the waiting task to read
     responses_dir = _project_dir(project_id) / "responses"
     responses_dir.mkdir(exist_ok=True)
@@ -180,21 +206,6 @@ def submit_response(project_id: str, entry_id: str, response_content: str) -> di
     (responses_dir / f"{entry_id}.json").write_text(
         json.dumps(response_data, indent=2), encoding="utf-8"
     )
-
-    # Mark the needs-input entry as responded in thread.jsonl
-    thread_file = _project_dir(project_id) / "thread.jsonl"
-    if thread_file.exists():
-        lines = thread_file.read_text(encoding="utf-8").splitlines()
-        updated_lines = []
-        for line in lines:
-            try:
-                entry = json.loads(line)
-                if entry.get("id") == entry_id:
-                    entry["responded"] = True
-                updated_lines.append(json.dumps(entry))
-            except json.JSONDecodeError:
-                updated_lines.append(line)
-        thread_file.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
 
     # Add user response entry to thread
     response_entry = add_thread_entry(

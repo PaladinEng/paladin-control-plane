@@ -77,6 +77,13 @@ async def submit_response_endpoint(
 
     response_entry = submit_response(project_id, pending["id"], body.content.strip())
 
+    # Double-tap race: submit_response returns None if already responded
+    if response_entry is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Already responded to this needs-input request",
+        )
+
     # Invalidate project scanner cache so status updates
     from backend.services.project_scanner import invalidate_cache
     invalidate_cache()
