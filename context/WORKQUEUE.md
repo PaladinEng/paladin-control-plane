@@ -1,5 +1,5 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02T04:05Z
+Last updated: 2026-04-02T15:00Z
 
 ## Active Sprint
 
@@ -17,6 +17,23 @@ done-when:
   - Path traversal guards on all file-serving endpoints
   - Atomic writes for thread.jsonl and prompt-queue.json
   - Dead code removed from project_scanner.py
+
+### [PCP-016] Per-prompt execution log (Option A logging)
+project: paladin-control-plane
+parallel: YES
+blast-radius: NONE
+overnight-ready: YES
+preconditions: PCP-012 complete
+done-when:
+  - Every dashboard prompt execution generates a structured log file
+    at ~/projects/{project}/logs/prompt-{timestamp}-{id}.md
+  - Log contains: prompt text, execution start/end time, files changed,
+    git commits made, outcome (success/fail/retry), claude output summary
+  - Log files appear as downloadable links in the dashboard project view
+    alongside existing session logs
+  - Thread completion message links to the execution log
+  - CPO execution log from ~/dev/logs/ is referenced or copied into
+    the prompt log for full detail
 
 ### Future enhancements
 - Mobile push notification improvements
