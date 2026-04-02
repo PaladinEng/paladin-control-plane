@@ -1,12 +1,55 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-01 (session 005)
+Last updated: 2026-04-02
 
 ## Active Sprint
 - [ ] PCP-010: Add project archive and restore — archive/restore buttons, collapsed section on home view
 
-## Backlog
+## P3 Backlog
 
-(empty)
+### [PCP-011] Unify ntfy and dashboard thread notifications
+project: paladin-control-plane
+parallel: YES
+blast-radius: NONE
+overnight-ready: YES
+preconditions: PCP-009 complete
+done-when:
+  - Every ntfy notification also appears as a thread event entry
+  - Every thread event also triggers an ntfy push notification
+  - Single code path in poll_prompts.py handles both channels together
+
+### [PCP-012] Session log download from dashboard
+project: paladin-control-plane
+parallel: YES
+blast-radius: NONE
+overnight-ready: YES
+preconditions: PCP-003 complete
+done-when:
+  - Session log filenames in project view are clickable download links
+  - GET /api/projects/{id}/logs/{filename} serves the raw log file
+  - Works on mobile (iOS Safari download)
+
+### [PCP-013] Batch prompt upload
+project: paladin-control-plane
+parallel: YES
+blast-radius: NONE
+overnight-ready: YES
+preconditions: PCP-004 complete
+done-when:
+  - File upload or multi-line paste mode in project view
+  - Each line or section becomes a separate queued prompt
+  - Prompts queued in order and executed sequentially
+  - Upload confirmation shows how many prompts were queued
+
+### [PCP-014] WORKQUEUE web editor
+project: paladin-control-plane
+parallel: YES
+blast-radius: NONE
+overnight-ready: YES
+preconditions: PCP-003 complete
+done-when:
+  - Form in project view to add/edit/reprioritize WORKQUEUE items
+  - Writes directly to project context/WORKQUEUE.md
+  - Changes reflected in dashboard on next refresh
 
 ## Blocked
 - Nothing blocked
@@ -23,3 +66,4 @@ Last updated: 2026-04-01 (session 005)
 - [x] 2026-04-01 PCP-008: GitHub OAuth authentication — login page, OAuth flow, session cookies, Tailscale bypass, auth middleware, security hardening (header spoof prevention, open redirect fix, XSS escaping)
 - [x] 2026-04-01 PCP-009: Overnight meta-supervisor — fixed task.md generation (full objectives, not just acknowledgement), auto-execution via queue-worker-full-pass.sh, overnight.py + systemd timer at 23:00, blast radius enforcement (LOW/NONE only)
 - [x] 2026-04-01 PCP-011: Fix claude CLI PATH — systemd override adds ~/.npm-global/bin to PATH, queue-run-codex.sh uses CLAUDE_BIN fallback, end-to-end test passed
+- [x] 2026-04-02 PCP-011: Morning briefing ✅ superseded — functionality covered by PCP-009 overnight timer and ntfy notifications
