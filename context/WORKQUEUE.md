@@ -1,10 +1,7 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02
+Last updated: 2026-04-02T00:15Z
 
 ## Active Sprint
-- [ ] PCP-010: Add project archive and restore — archive/restore buttons, collapsed section on home view
-
-## P3 Backlog
 
 ### [PCP-011] Unify ntfy and dashboard thread notifications
 project: paladin-control-plane
@@ -16,6 +13,8 @@ done-when:
   - Every ntfy notification also appears as a thread event entry
   - Every thread event also triggers an ntfy push notification
   - Single code path in poll_prompts.py handles both channels together
+
+## P3 Backlog
 
 ### [PCP-012] Session log download from dashboard
 project: paladin-control-plane
@@ -66,4 +65,5 @@ done-when:
 - [x] 2026-04-01 PCP-008: GitHub OAuth authentication — login page, OAuth flow, session cookies, Tailscale bypass, auth middleware, security hardening (header spoof prevention, open redirect fix, XSS escaping)
 - [x] 2026-04-01 PCP-009: Overnight meta-supervisor — fixed task.md generation (full objectives, not just acknowledgement), auto-execution via queue-worker-full-pass.sh, overnight.py + systemd timer at 23:00, blast radius enforcement (LOW/NONE only)
 - [x] 2026-04-01 PCP-011: Fix claude CLI PATH — systemd override adds ~/.npm-global/bin to PATH, queue-run-codex.sh uses CLAUDE_BIN fallback, end-to-end test passed
+- [x] 2026-04-01 PCP-010: Add project archive and restore ✅ — archive/restore buttons, collapsed section on home view
 - [x] 2026-04-02 PCP-011: Morning briefing ✅ superseded — functionality covered by PCP-009 overnight timer and ntfy notifications
