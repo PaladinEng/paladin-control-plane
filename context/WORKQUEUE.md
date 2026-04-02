@@ -1,18 +1,22 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02T00:21Z
+Last updated: 2026-04-02T01:10Z
 
 ## Active Sprint
 
-### [PCP-011] Unify ntfy and dashboard thread notifications
+### [PCP-011] Unify notifications, timeout handling, Claude hang detection
 project: paladin-control-plane
-parallel: YES
+parallel: NO
 blast-radius: NONE
 overnight-ready: YES
 preconditions: PCP-009 complete
 done-when:
   - Every ntfy notification also appears as a thread event entry
   - Every thread event also triggers an ntfy push notification
-  - Single code path in poll_prompts.py handles both channels together
+  - Timeout failures write distinct "timed out after 30 min" thread entry
+  - Timeout failures send high-priority ntfy notification
+  - Claude hang detection: if active queue task has no file activity for
+    30 minutes, kill the process and move task to failed with notification
+  - Single unified notify() function in poll_prompts.py handles both channels
 
 ## P3 Backlog
 
@@ -35,11 +39,26 @@ overnight-ready: YES
 preconditions: PCP-004 complete
 done-when:
   - File upload or multi-line paste mode in project view
-  - Each line or section becomes a separate queued prompt
+  - Each blank-line or ## section becomes a separate queued prompt
   - Prompts queued in order and executed sequentially
   - Upload confirmation shows how many prompts were queued
 
-### [PCP-014] WORKQUEUE web editor
+### [PCP-014] Spawn new projects from dashboard
+project: paladin-control-plane
+parallel: NO
+blast-radius: LOW
+overnight-ready: YES
+preconditions: PCP-003 complete
+done-when:
+  - New Project button on home view
+  - Form accepts: project name, GitHub repo (PaladinEng/repo-name),
+    project description
+  - Creates local directory, clones repo, creates context files from
+    paladin-context-system template, adds to WORKQUEUE-MASTER.md,
+    registers with API scanner
+  - New project appears in dashboard within 60 seconds
+
+### [PCP-015] WORKQUEUE web editor
 project: paladin-control-plane
 parallel: YES
 blast-radius: NONE
