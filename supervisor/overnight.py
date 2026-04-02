@@ -169,6 +169,9 @@ When complete:
 - If anything unexpected arises that raises blast-radius, STOP and
   write to ~/projects/NOTIFY.md then exit
 - Do not proceed with any operation not described in the objective
+- Do NOT restart paladin-supervisor.service during execution.
+  Send SIGHUP if a reload is needed:
+  systemctl --user kill --signal=SIGHUP paladin-supervisor.service
 
 ## Acceptance criteria
 - Task fully executed per the objective

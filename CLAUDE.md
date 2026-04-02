@@ -90,6 +90,17 @@ paladin-control-plane/
 5. ntfy is the only notification channel — no email, no SMS, no Slack.
 6. Update context/STATUS.md and context/WORKQUEUE.md after every completed task.
 7. Commit all file changes to git before ending any session.
+8. **Service restart rules:**
+   - NEVER restart paladin-supervisor.service during task execution.
+     Restarting the supervisor mid-queue resets state and disrupts
+     in-flight tasks. The supervisor is designed to run continuously.
+     To signal a config reload:
+     `systemctl --user kill --signal=SIGHUP paladin-supervisor.service`
+     The supervisor auto-restarts via Restart=on-failure if it crashes —
+     do not manually trigger this.
+   - paladin-api.service MAY be restarted only as the final step of a
+     task, after all code changes are committed, and only when new
+     API endpoints need to be activated.
 
 ## Blast radius rules
 - LOW: proceed autonomously

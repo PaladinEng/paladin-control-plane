@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -60,6 +61,23 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("supervisor")
+
+
+def _reload_handler(signum, frame):
+    """Handle SIGHUP — log reload signal, continue running.
+
+    Tasks that modify poll_prompts.py should send SIGHUP instead of
+    restarting the service. The updated code takes effect on next
+    full service restart (e.g. after reboot or manual restart).
+    Running tasks are not interrupted.
+    """
+    logger.info(
+        "SIGHUP received — supervisor continuing without restart. "
+        "Code changes to poll_prompts.py take effect on next full restart."
+    )
+
+
+signal.signal(signal.SIGHUP, _reload_handler)
 
 
 def _now_iso() -> str:
@@ -422,6 +440,16 @@ Exit cleanly.
 - Do not make changes outside the project directory without explicit
   instruction in the objective above
 - Write exactly one response entry to thread.jsonl when done
+- Do NOT run systemctl restart paladin-supervisor.service or
+  systemctl stop paladin-supervisor.service during task execution.
+  The supervisor manages its own restart lifecycle and restarting
+  it mid-queue disrupts in-flight state and resets the hang detector.
+  If poll_prompts.py was modified and a reload is needed, use:
+  systemctl --user kill --signal=SIGHUP paladin-supervisor.service
+  This keeps the supervisor running without disrupting the queue.
+- Do NOT restart paladin-api.service unless the task explicitly
+  requires it for new endpoints to take effect. If restart is
+  needed, do it as the final step after all other work is committed.
 
 ## Acceptance criteria
 - The objective above has been fully executed
