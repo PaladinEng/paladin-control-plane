@@ -29,6 +29,10 @@ class NeedsInputRequest(BaseModel):
 _subscribers: list[asyncio.Queue] = []
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def broadcast_sse(event_type: str, payload: dict) -> None:
     """Broadcast an SSE event to all connected subscribers."""
     data = json.dumps({**payload, "type": event_type})
@@ -46,8 +50,16 @@ def broadcast_sse(event_type: str, payload: dict) -> None:
             pass
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def broadcast_project_update(project_id: str, *event_types: str) -> None:
+    """Broadcast one or more SSE events for a project change.
+
+    Common usage:
+        broadcast_project_update(project_id, "thread_update")
+        broadcast_project_update(project_id, "thread_update", "status_update")
+    """
+    ts = _now_iso()
+    for event_type in event_types:
+        broadcast_sse(event_type, {"project_id": project_id, "timestamp": ts})
 
 
 async def _event_generator(request: Request) -> AsyncGenerator[str, None]:
@@ -98,23 +110,10 @@ async def publish_event(request: Request):
         body = {}
 
     event_type = body.get("type", "update")
-    payload = json.dumps({"timestamp": _now_iso(), **body})
-    sse_message = f"event: {event_type}\ndata: {payload}\n\n"
+    subscriber_count = len(_subscribers)
+    broadcast_sse(event_type, {"timestamp": _now_iso(), **body})
 
-    dead: list[asyncio.Queue] = []
-    for q in _subscribers:
-        try:
-            q.put_nowait(sse_message)
-        except asyncio.QueueFull:
-            dead.append(q)
-
-    for q in dead:
-        try:
-            _subscribers.remove(q)
-        except ValueError:
-            pass
-
-    return {"status": "ok", "delivered_to": len(_subscribers) - len(dead)}
+    return {"status": "ok", "delivered_to": subscriber_count}
 
 
 @router.post("/api/projects/{project_id}/needs-input")
@@ -148,11 +147,6 @@ async def request_input(project_id: str, body: NeedsInputRequest):
     except Exception:
         pass  # ntfy failure is non-fatal
 
-    # Broadcast SSE events
-    for event_type in ("thread_update", "status_update"):
-        broadcast_sse(event_type, {
-            "project_id": project_id,
-            "timestamp": _now_iso(),
-        })
+    broadcast_project_update(project_id, "thread_update", "status_update")
 
     return entry

@@ -2,7 +2,7 @@
 Last verified: 2026-04-02
 
 ## Current State
-All core systems operational and verified via smoke test 2026-04-02. Backend API on port 8080 serving frontend dashboard with GitHub OAuth for public access via Cloudflare Tunnel. Tailscale (10.1.10.x, 100.x.x.x) and localhost bypass authentication. Meta-supervisor running continuously, polling prompt queues every 60s and auto-executing CPO tasks. Overnight timer scheduled for daily execution at 23:00 UTC. ntfy notification service active on port 8090. Archive and restore endpoints fully functional. Project creation system v1.1 with 4-mode support complete. No blocking issues.
+All core systems operational and verified via smoke test 2026-04-02. Backend API on port 8080 serving frontend dashboard with GitHub OAuth for public access via Cloudflare Tunnel. Tailscale (10.1.10.x, 100.x.x.x) and localhost bypass authentication. Meta-supervisor running continuously, polling prompt queues every 60s and auto-executing CPO tasks. Overnight timer scheduled for daily execution at 23:00 UTC. ntfy notification service active on port 8090. Archive and restore endpoints fully functional. Project creation system v1.1 with 4-mode support complete. CPO retry path issues fixed with exponential backoff and max retry limits. No blocking issues.
 
 ## Services
 
@@ -96,13 +96,15 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 - Hang detector threshold: 10 minutes (timeout wrapper handles 30min hard cap)
 - Task.md templates include explicit exit instruction to prevent Claude Code hang-on-exit
 - queue-run-codex.sh wraps claude with `timeout 1800` and detects FINISHED WORK signal
+- CPO retry path: exponential backoff (0/60/120/300/600 seconds), max 5 attempts, manual-only warning in generated run-claude.sh
+- Verified queue-run-codex.sh does not call run-claude.sh
 
 **Helper Tools:**
 - supervisor/request_input.py — pauseable Claude Code tasks can request input and wait
 - Data directories exist for homelab-infra and paladin-control-plane
 
 **Logs:** logs/supervisor.log
-**Recent Activity:** Created task for 2026-04-02 smoke test session
+**Recent Activity:** Created task for 2026-04-02 smoke test session, CPO retry path fixes applied 2026-04-02
 
 **Last verified:** 2026-04-02
 
@@ -167,7 +169,7 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 
 ## In Progress
 
-- **PCP-017:** Project creation system v1.1 — complete (2026-04-02)
+None. All systems operational.
 
 ## Blocked
 
@@ -188,8 +190,10 @@ None. All dependencies satisfied.
 - PCP-014 (spawn new projects) completed 2026-04-02
 - PCP-015 (WORKQUEUE web editor) completed 2026-04-02
 - PCP-017 (project creation system v1.1) completed 2026-04-02
+- Session 2026-04-02: Fixed CPO retry path issues — exponential backoff, max retry limit, manual-only warning
+- Overnight 2026-04-02: PCP-016 — SSE broadcast code duplication fixed, broadcast_project_update() helper extracted
 
 ## Last Updated
 
 Date: 2026-04-02
-Verification Method: Complete smoke test (services, API endpoints, frontend, OAuth, meta-supervisor, overnight timer, ntfy, tunnel, archive/restore, project creation system)
+Verification Method: Overnight 2026-04-02 — PCP-016 SSE broadcast dedup, imports validated

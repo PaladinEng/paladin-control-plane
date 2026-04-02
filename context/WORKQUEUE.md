@@ -1,5 +1,5 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02T15:00Z
+Last updated: 2026-04-02T23:15Z
 
 ## Active Sprint
 
@@ -72,3 +72,5 @@ done-when:
 - [x] 2026-04-02 FIX: Poll interval reduced to 30 seconds — faster prompt pickup
 - [x] 2026-04-02 FIX: Runtime status (running/queued/idle) — dashboard shows live execution state
 - [x] 2026-04-02 FIX: StreamHandler removed, log dedup fixed — no more duplicate log lines
+- [x] 2026-04-02 FIX: CPO retry path — exponential backoff (0/60/120/300/600s), max 5 attempts, manual-only warning in queue-handoff.sh, hang detector with exponential backoff in poll_prompts.py
+- [x] 2026-04-02 PCP-016: Fix SSE broadcast code duplication — extracted broadcast_project_update() helper, eliminated duplicate broadcast logic from publish_event and all route files
