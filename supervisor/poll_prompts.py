@@ -32,7 +32,7 @@ from backend.services.thread_service import (
 )
 
 # Hang detection constants
-HANG_TIMEOUT_SECONDS = 30 * 60  # 30 minutes
+HANG_TIMEOUT_SECONDS = 10 * 60  # 10 minutes — timeout wrapper handles 30min hard cap
 HANG_CHECK_INTERVAL = 60  # check every 60 seconds
 
 # Configuration
@@ -428,6 +428,9 @@ Exit cleanly.
 - A response entry has been written to thread.jsonl summarising
   what was accomplished
 - All changes committed if the objective involved file modifications
+
+When all work above is complete, you MUST exit immediately by
+stopping all activity. Do not wait for further input.
 """
     (task_dir / "task.md").write_text(task_md, encoding="utf-8")
 

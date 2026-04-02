@@ -175,6 +175,9 @@ When complete:
 - WORKQUEUE.md updated
 - Changes committed
 - Response written to thread.jsonl
+
+When all work above is complete, you MUST exit immediately by
+stopping all activity. Do not wait for further input.
 """
 
     (task_dir / "task.md").write_text(task_md)
