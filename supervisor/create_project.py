@@ -95,6 +95,64 @@ After all checks pass, emit SSE progress:
 """
 
 
+def _intake_pass_section(slug: str) -> str:
+    """Generate the intake pass instructions for existing-repo and imported-repo modes.
+
+    Scans the project root for existing context files, documentation, and config
+    files before generating any context files — enriching the output with everything
+    learned from the project.
+    """
+    return f"""### Intake Pass — Run BEFORE any context file generation
+
+Scan ~/projects/{slug}/ and collect information from the following sources.
+All information gathered here informs the context files generated in later steps.
+
+#### 1. Context System Files
+
+Scan the project root for these files and handle as specified:
+
+| File(s) at root | Action |
+|-----------------|--------|
+| CONTEXT.md, DEV_GUIDE.md, MERGE_NOTES.md, CONTENT_REPLACE_CONFLICTS.md | If context/CONTEXT.md does NOT exist: synthesize a single CONTEXT.md from all of these combined. If context/CONTEXT.md already exists: read these files and append any non-redundant information to context/CONTEXT.md. |
+| AGENTS.md | If context/AGENTS.md does NOT exist: copy to context/. If it exists: read and merge non-redundant content. |
+| DECISIONS.md | If context/DECISIONS.md does NOT exist: copy to context/. If it exists: read and merge non-redundant content. |
+| STATUS.md | If context/STATUS.md does NOT exist: copy to context/. If it exists: read and merge non-redundant content. |
+| WORKQUEUE.md | If context/WORKQUEUE.md does NOT exist: copy to context/. If it exists: read and merge non-redundant content. |
+| meta.yaml | If context/meta.yaml does NOT exist: read and migrate — update field names to match supervisor schema (id, name, repo, entity, priority, status). If context/meta.yaml exists: skip. |
+| CLAUDE.md, codex.md | Read as additional context to inform generation. Do NOT copy — CLAUDE.md will be generated fresh at project root per spec. |
+
+#### 2. Project Documentation
+
+Read these files if present and use their content to enrich context/CONTEXT.md:
+
+- **README.md** — primary source for project overview, goals, architecture
+- Any other .md files at the project root not already covered above (e.g. CONTRIBUTING.md, CHANGELOG.md, LICENSE.md)
+
+#### 3. Project Config Files
+
+Read these files if present to infer tech stack, architecture, and operational commands:
+
+- **package.json** — dependencies, scripts (build/test/lint/dev commands), project name
+- **pnpm-workspace.yaml / pnpm-lock.yaml** — monorepo structure, workspace packages
+- **tsconfig.base.json / tsconfig.json** — TypeScript configuration
+- **pyproject.toml / setup.py / setup.cfg** — Python project metadata
+- **requirements.txt / Pipfile** — Python dependencies
+- **Cargo.toml** — Rust project
+- **go.mod** — Go module
+- **Makefile** — build targets
+- **Dockerfile / docker-compose.yml** — container config
+- **Any other config files at root** (.eslintrc, .prettierrc, nx.json, turbo.json, etc.)
+
+Record the following from config files for use in context generation:
+- **Tech stack**: languages, frameworks, key dependencies
+- **Validation commands**: build, test, lint, format commands from package.json scripts / Makefile targets / pyproject.toml scripts
+- **Monorepo structure**: workspace packages and their purposes
+- **Key directories**: src/, lib/, apps/, packages/, etc. and their roles
+
+After the intake pass, proceed to the context file decision tree using the enriched understanding.
+"""
+
+
 def _mode_steps(payload: dict) -> str:
     mode = payload["mode"]
     slug = payload["slug"]
@@ -110,6 +168,8 @@ def _mode_steps(payload: dict) -> str:
         required_files = compliance.get("required_files", [])
         required_files_str = ", ".join(f'`{f}`' for f in required_files)
 
+        intake = _intake_pass_section(slug)
+
         return f"""## Mode: existing-repo
 
 ### Step 1 — Determine local state
@@ -118,11 +178,15 @@ Check whether ~/projects/{slug}/ already exists (it may have been confirmed in p
 
 **If ~/projects/{slug}/ does NOT exist:**
 - Clone: `git clone {github_url} ~/projects/{slug}`
-- Then proceed to Step 2b (generate all context files).
+- Then proceed to Step 1b.
 
 **If ~/projects/{slug}/ DOES exist (local clone confirmed in pre-flight):**
 - Do NOT clone — the repo is already present.
-- Check the `context/` directory to determine which sub-path to follow.
+- Proceed to Step 1b.
+
+### Step 1b — Intake Pass
+
+{intake}
 
 ### Step 2 — Context file decision tree
 
@@ -189,22 +253,31 @@ The required compliance files are: {required_files_str}
         fork_note = ""
         if payload.get("fork", False):
             fork_note = f"\n1a. Fork: `gh repo fork {github_url} --org PaladinEng --clone=false`"
+        intake = _intake_pass_section(slug)
+
         return f"""## Mode: imported-repo
 
 1. Clone: `git clone {github_url} ~/projects/{slug}`{fork_note}
-2. Read codebase: directory tree, README, primary source files, existing docs.
-3. Generate context files reflecting actual codebase architecture.
-4. Self-validate against compliance checklist.
-5. Commit context files (skip if no fork — read-only import):
+
+### Step 1b — Intake Pass
+
+{intake}
+
+2. Apply the context file decision tree (Cases A/B/C from existing-repo logic) using enriched understanding from the intake pass.
+   - If context/ exists with all required compliance files: skip generation, register only.
+   - If context/ exists with gaps: generate only missing files, enriched by intake data.
+   - If no context/: generate all context files reflecting actual codebase architecture.
+3. Self-validate against compliance checklist.
+4. Commit context files (skip if no fork — read-only import):
    ```
    cd ~/projects/{slug}
    git add context/ CLAUDE.md
    git commit -m 'chore: add paladin context files'
    git push
    ```
-6. Register (see Registration Contract below).
-7. Call provisioning-complete: `curl -s -X POST http://localhost:8080/api/projects/{slug}/provisioning-complete`
-8. Print FINISHED WORK
+5. Register (see Registration Contract below).
+6. Call provisioning-complete: `curl -s -X POST http://localhost:8080/api/projects/{slug}/provisioning-complete`
+7. Print FINISHED WORK
 """
 
     elif mode == "prompted-start":
@@ -333,6 +406,12 @@ status: active
 - GitHub repo URL: https://github.com/{owner}/{slug}
 - Standard session start: cd to project, read STATUS.md and WORKQUEUE.md
 - Session end: update STATUS.md, commit, print FINISHED WORK
+- **From intake pass (if available):**
+  - Validation commands (e.g. `npm test`, `make lint`, `pytest`) inferred from package.json scripts, Makefile targets, or pyproject.toml
+  - Monorepo structure notes if pnpm-workspace.yaml or similar was found
+  - Key directories and their purposes from the file tree scan
+  - Tech stack summary (languages, frameworks, key dependencies)
+  - Any operational notes from existing CLAUDE.md or codex.md that should carry forward
 
 ### STATUS.md — Initial Content
 - Phase 0 — Project created via PCP on {today}
@@ -354,8 +433,13 @@ status: active
 
 ### CONTEXT.md (best practice, not enforced)
 - Architecture overview
-- Tech stack
-- Key components
+- Tech stack (inferred from config files during intake)
+- Key components and directory structure
+- **From intake pass (if available):**
+  - Content synthesized from CONTEXT.md, DEV_GUIDE.md, MERGE_NOTES.md found at root
+  - Architecture details from README.md
+  - Dependency summary from package.json / pyproject.toml / Cargo.toml / go.mod
+  - Monorepo workspace layout from pnpm-workspace.yaml / nx.json / turbo.json
 """
 
 
