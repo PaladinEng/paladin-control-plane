@@ -336,7 +336,7 @@ function setupNewProjectForm() {
             return;
         }
 
-        const payload = { mode };
+        const payload = { mode: getMode() };
         payload.name = document.getElementById('np-name')?.value.trim() || slug;
         payload.owner = document.getElementById('np-owner')?.value || 'PaladinEng';
         payload.private = document.getElementById('np-private')?.checked ?? true;
