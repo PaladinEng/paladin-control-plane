@@ -99,7 +99,7 @@ async function renderAuthIndicator(el) {
         if (status.method === 'tailscale') {
             el.textContent = 'Local access';
         } else {
-            el.innerHTML = `${escapeHtml(status.user)} · <a href="/auth/logout" style="color:#94a3b8">Sign out</a>`;
+            el.innerHTML = `${escapeHtml(status.user)} · <a href="/auth/logout" style="color:#e6e6e6">Sign out</a>`;
         }
     } catch {
         // Silently ignore
