@@ -135,9 +135,10 @@ async def create_project(body: CreateProjectRequest):
     if existing is not None:
         raise HTTPException(status_code=409, detail=f"Project '{slug}' already exists")
 
-    # Check local directory
+    # Check local directory — only for modes that create a new directory.
+    # existing-repo and imported-repo expect the local directory to already exist.
     projects_root = Path.home() / "projects"
-    if (projects_root / slug).exists():
+    if body.mode in ("new-repo", "prompted-start") and (projects_root / slug).exists():
         raise HTTPException(
             status_code=409,
             detail=f"Directory ~/projects/{slug} already exists",
