@@ -50,16 +50,17 @@ def broadcast_sse(event_type: str, payload: dict) -> None:
             pass
 
 
-def broadcast_project_update(project_id: str, *event_types: str) -> None:
+def broadcast_project_update(project_id: str, *event_types: str, **extra) -> None:
     """Broadcast one or more SSE events for a project change.
 
     Common usage:
         broadcast_project_update(project_id, "thread_update")
         broadcast_project_update(project_id, "thread_update", "status_update")
+        broadcast_project_update(project_id, "status_update", status="provisioning")
     """
     ts = _now_iso()
     for event_type in event_types:
-        broadcast_sse(event_type, {"project_id": project_id, "timestamp": ts})
+        broadcast_sse(event_type, {"project_id": project_id, "timestamp": ts, **extra})
 
 
 async def _event_generator(request: Request) -> AsyncGenerator[str, None]:

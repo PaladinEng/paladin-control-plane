@@ -11,7 +11,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from backend.models.project import ProjectDetail, ProjectSummary
-from backend.routes.events import broadcast_sse
+from backend.routes.events import broadcast_project_update
 from backend.config import DATA_ROOT
 from backend.services.archive_service import archive_project, restore_project
 from backend.services.project_scanner import (
@@ -207,11 +207,7 @@ async def create_project(body: CreateProjectRequest):
     (runtime_dir / "prompt-queue.json").write_text("[]", encoding="utf-8")
 
     invalidate_cache()
-    broadcast_sse("status_update", {
-        "project_id": slug,
-        "status": "provisioning",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    broadcast_project_update(slug, "status_update", status="provisioning")
 
     return {
         "project_id": slug,
@@ -237,11 +233,7 @@ async def provisioning_complete(project_id: str):
             pass
 
     invalidate_cache()
-    broadcast_sse("status_update", {
-        "project_id": project_id,
-        "status": "idle",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    broadcast_project_update(project_id, "status_update", status="idle")
 
     # Send ntfy notification
     try:

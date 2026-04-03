@@ -197,5 +197,5 @@ None. All dependencies satisfied.
 
 ## Last Updated
 
-Date: 2026-04-02
-Verification Method: Overnight 2026-04-02 — PCP-018 DATA_ROOT consolidation, all imports validated
+Date: 2026-04-03
+Verification Method: Overnight 2026-04-03 — PCP-016 follow-up: projects.py broadcast duplication eliminated, all imports validated
