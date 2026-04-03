@@ -558,6 +558,72 @@ def _active_queue_is_empty() -> bool:
         return True
 
 
+def _cleanup_orphaned_pending() -> int:
+    """Scan pending/ for task files whose prompt is already handled.
+
+    This catches orphans left by the old premature-handling bug: the prompt
+    was marked handled at task-creation time, so the supervisor never picked
+    the task file back up.  Move each orphan to completed/ with a cleanup note.
+
+    Returns the number of tasks cleaned up.
+    """
+    cleaned = 0
+    completed_dir = QUEUE_ROOT.parent / "completed"
+    try:
+        if not QUEUE_ROOT.exists():
+            return 0
+        for task_dir in QUEUE_ROOT.iterdir():
+            if not task_dir.is_dir():
+                continue
+            status_file = task_dir / "status.json"
+            if not status_file.exists():
+                continue
+            try:
+                status = json.loads(status_file.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            project_id = status.get("project_id")
+            prompt_id = status.get("prompt_id")
+            if not project_id or not prompt_id:
+                continue
+            # Check if the prompt is already handled
+            try:
+                queue = _read_full_queue(project_id)
+            except Exception:
+                continue
+            prompt_handled = False
+            for entry in queue:
+                if entry.get("id") == prompt_id and entry.get("handled"):
+                    prompt_handled = True
+                    break
+            if not prompt_handled:
+                continue
+            # Prompt is handled but task is still in pending — orphan
+            logger.warning(
+                "Orphaned pending task %s: prompt %s already handled — "
+                "moving to completed/",
+                task_dir.name, prompt_id[:8],
+            )
+            # Write cleanup note
+            note = (
+                f"Cleaned up by supervisor at {_now_iso()}. "
+                f"Prompt {prompt_id} was already marked handled "
+                f"(likely premature handling bug). Task never executed."
+            )
+            (task_dir / "cleanup-note.txt").write_text(note, encoding="utf-8")
+            # Move to completed/
+            dest = completed_dir / task_dir.name
+            completed_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                task_dir.rename(dest)
+                cleaned += 1
+            except Exception as e:
+                logger.error("Failed to move orphaned task %s: %s", task_dir.name, e)
+    except Exception as e:
+        logger.error("Orphaned pending cleanup error: %s", e)
+    return cleaned
+
+
 def process_prompt(project_id: str, prompt: dict) -> bool:
     """Process a single unhandled prompt. Returns True if executed, False if deferred."""
     prompt_id = prompt["id"]
@@ -587,14 +653,13 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
 
     logger.info("Routed prompt %s → task %s", prompt_id[:8], task_id)
 
-    # Mark handled BEFORE execution — prevents duplicate retry if supervisor
-    # restarts mid-execution. Hang detector handles the in-execution case.
-    mark_prompt_handled(project_id, prompt_id)
-
-    # Execute the task automatically
+    # Execute the task — prompt is only marked handled on success or
+    # by the hang detector when work was committed. This ensures failed
+    # or hung tasks that did no work can be retried.
     result = _execute_cpo_task(project_id, task_id)
 
     if result == "success":
+        mark_prompt_handled(project_id, prompt_id)
         notify(
             project_id,
             f"Task {task_id} completed successfully",
@@ -603,6 +668,8 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
             ntfy_priority="default",
         )
     elif result == "timeout":
+        # Don't mark handled — hang detector will decide based on
+        # whether work was committed
         notify(
             project_id,
             f"Task {task_id} timed out after 30 minutes. "
@@ -613,6 +680,7 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
             ntfy_priority="high",
         )
     else:
+        # Don't mark handled — leave for retry on next poll cycle
         notify(
             project_id,
             f"Task {task_id} failed \u2014 check CPO logs",
@@ -628,6 +696,11 @@ def poll_once() -> int:
     Returns count of prompts processed (0 or 1)."""
     if not DATA_ROOT.exists():
         return 0
+
+    # Clean up orphaned pending tasks from premature handling
+    cleaned = _cleanup_orphaned_pending()
+    if cleaned > 0:
+        logger.info("Cleaned up %d orphaned pending task(s)", cleaned)
 
     # Collect all unhandled prompts across all projects
     all_prompts: list[tuple[str, dict]] = []

@@ -7,3 +7,7 @@ __pycache__/
 dist/
 build/
 .DS_Store
+logs/overnight.log
+logs/supervisor.log
+logs/verification-*.md
+*.docx
