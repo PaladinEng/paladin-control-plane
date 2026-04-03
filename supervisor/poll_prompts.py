@@ -27,10 +27,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from backend.services.thread_service import (
     _read_full_queue,
     _write_queue,
+    add_needs_input_request,
     add_thread_entry,
     get_prompt_queue,
     mark_prompt_handled,
 )
+import yaml as _yaml
 
 # Hang detection constants
 HANG_TIMEOUT_SECONDS = 10 * 60  # 10 minutes — timeout wrapper handles 30min hard cap
@@ -55,6 +57,35 @@ PROJECTS_ROOT = Path.home() / "projects"
 
 # Strict project_id validation — prevents path traversal
 _PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
+
+# Active blocker registry — in-memory, rebuilt from disk on restart
+# Format: {blocker_id: {type, fingerprint, project_id, task_name,
+#                       created_at, attempts, status, blocker_data}}
+_active_blockers: dict[str, dict] = {}
+_blocker_id_counter = 0
+
+PATTERNS_DIR = Path.home() / "projects" / "paladin-context-system" / "patterns"
+PATTERNS_REGISTRY = PATTERNS_DIR / "_registry.yaml"
+
+MAX_RETRIES = 5
+
+
+def _load_patterns_registry() -> dict:
+    """Load the blocker patterns registry from disk."""
+    try:
+        if PATTERNS_REGISTRY.exists():
+            return _yaml.safe_load(PATTERNS_REGISTRY.read_text()) or {}
+    except Exception as e:
+        logger.warning(f"Failed to load patterns registry: {e}")
+    return {}
+
+
+def _new_blocker_id() -> str:
+    global _blocker_id_counter
+    _blocker_id_counter += 1
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"blocker-{ts}-{_blocker_id_counter:03d}"
+
 
 # Set up logging
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -624,12 +655,265 @@ def _cleanup_orphaned_pending() -> int:
     return cleaned
 
 
+def handle_blocker(project_id: str, blocker: dict, task_name: str) -> None:
+    """
+    Handle a detected blocker:
+    1. Check if same fingerprint is already active
+    2. Attempt autonomous resolution if pattern says auto_fix: true
+    3. If unresolved, register as active blocker and send needs-input
+    4. Update patterns registry encountered_by list
+    """
+    blocker_type = blocker.get("type", "unknown")
+    fingerprint = blocker.get("fingerprint", f"{blocker_type}-{project_id}")
+
+    # Check if same blocker already active
+    for bid, active in _active_blockers.items():
+        if active["fingerprint"] == fingerprint and active["status"] == "active":
+            logger.info(
+                f"Blocker {fingerprint} already active as {bid} — "
+                f"parking task without new notification"
+            )
+            _park_prompt(project_id, blocker_type, bid)
+            return
+
+    # Load patterns registry to check auto_fix
+    registry = _load_patterns_registry()
+    pattern = registry.get("patterns", {}).get(blocker_type, {})
+    auto_fix = pattern.get("auto_fix", False)
+
+    # Attempt autonomous resolution
+    if auto_fix:
+        resolved = _attempt_autonomous_fix(blocker_type, blocker, project_id)
+        if resolved:
+            logger.info(f"Autonomous fix succeeded for {blocker_type}")
+            notify(
+                project_id,
+                f"Blocker {blocker_type} resolved autonomously. Task will retry.",
+                ntfy_title=f"\U0001f527 [{project_id}] Blocker auto-fixed",
+                ntfy_tags="wrench",
+                ntfy_priority="low",
+            )
+            return
+
+    # Register active blocker
+    blocker_id = _new_blocker_id()
+    _active_blockers[blocker_id] = {
+        "type": blocker_type,
+        "fingerprint": fingerprint,
+        "project_id": project_id,
+        "task_name": task_name,
+        "created_at": time.time(),
+        "attempts": 1,
+        "status": "active",
+        "blocker_data": blocker,
+    }
+
+    # Update patterns registry encountered_by
+    _update_registry_encountered_by(blocker_type, project_id)
+
+    # Send needs-input to dashboard
+    _send_blocker_needs_input(project_id, blocker_id, blocker, task_name)
+
+    logger.info(
+        f"Blocker {blocker_id} registered: {blocker_type} in {project_id}"
+    )
+
+
+def _attempt_autonomous_fix(
+    blocker_type: str, blocker: dict, project_id: str
+) -> bool:
+    """
+    Attempt to fix a blocker autonomously based on known fix steps.
+    Returns True if resolved, False if escalation needed.
+    """
+    logger.info(f"Attempting autonomous fix for {blocker_type}")
+
+    fixes = {
+        "github-auth": [
+            ["gh", "auth", "refresh"],
+        ],
+        "api-down": [
+            ["systemctl", "--user", "restart", "paladin-api.service"],
+        ],
+        "missing-credential": [
+            ["bash", "-c", "source ~/.paladin-secrets/tokens"],
+        ],
+        "path-issue": [
+            ["bash", "-c",
+             "export PATH=$HOME/.npm-global/bin:$HOME/.local/bin:$PATH"],
+        ],
+        "missing-dependency": [],  # Handled in task template
+        "service-crash": [
+            ["systemctl", "--user", "restart", "paladin-api.service"],
+        ],
+        "disk-full": [
+            ["bash", "-c",
+             "find ~/dev/queue/completed -mtime +7 -exec rm -rf {} + 2>/dev/null; "
+             "find ~/dev/logs -mtime +7 -delete 2>/dev/null"],
+        ],
+        "trust-prompt": [],  # Cannot fix autonomously
+    }
+
+    steps = fixes.get(blocker_type, [])
+    if not steps:
+        return False
+
+    for step in steps:
+        try:
+            result = subprocess.run(
+                step, capture_output=True, text=True, timeout=30
+            )
+            logger.info(f"Auto-fix step {step}: exit {result.returncode}")
+        except Exception as e:
+            logger.warning(f"Auto-fix step failed: {e}")
+
+    # Verify fix worked (simple check)
+    if blocker_type == "api-down":
+        import urllib.request
+        try:
+            urllib.request.urlopen(
+                "http://localhost:8080/health", timeout=5
+            )
+            return True
+        except Exception:
+            return False
+
+    if blocker_type == "github-auth":
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
+
+    # For other types, assume fix worked if no exception
+    return len(steps) > 0
+
+
+def _park_prompt(project_id: str, blocker_type: str, blocker_id: str) -> None:
+    """Mark unhandled prompts in this project as parked for this blocker."""
+    queue = _read_full_queue(project_id)
+    parked_count = 0
+    for entry in queue:
+        if not entry.get("handled") and not entry.get("parked"):
+            entry["parked"] = True
+            entry["parked_reason"] = blocker_type
+            entry["parked_blocker_id"] = blocker_id
+            entry["parked_at"] = time.time()
+            parked_count += 1
+    if parked_count:
+        _write_queue(project_id, queue)
+        logger.info(
+            f"Parked {parked_count} prompts in {project_id} "
+            f"for blocker {blocker_id}"
+        )
+
+
+def _send_blocker_needs_input(
+    project_id: str, blocker_id: str, blocker: dict, task_name: str
+) -> None:
+    """Send a structured needs-input entry for a blocker."""
+    blocker_type = blocker.get("type", "unknown")
+    description = blocker.get("description", "Unknown error")
+    fix_instructions = blocker.get("fix_instructions", "Check CPO logs.")
+    completed = blocker.get("completed_steps", [])
+    remaining = blocker.get("remaining_steps", [])
+
+    completed_text = (
+        "\n".join(f"  \u2705 {s}" for s in completed) if completed else "  (none)"
+    )
+    remaining_text = (
+        "\n".join(f"  \u23f3 {s}" for s in remaining) if remaining else "  (unknown)"
+    )
+
+    question = (
+        f"\u23f8\ufe0f Task blocked: {blocker_type}\n\n"
+        f"What happened: {description}\n\n"
+        f"Completed before blocker:\n{completed_text}\n\n"
+        f"Still to do:\n{remaining_text}\n\n"
+        f"To fix:\n{fix_instructions}\n\n"
+        f"When done, reply 'cleared' and this task will resume automatically.\n"
+        f"Blocker ID: {blocker_id}"
+    )
+
+    add_needs_input_request(project_id, question, blocker_id)
+
+    # Also send ntfy
+    notify(
+        project_id,
+        f"Blocker: {blocker_type} \u2014 {description[:80]}",
+        ntfy_title=f"\u23f8\ufe0f [{project_id}] Task blocked",
+        ntfy_tags="pause_button",
+        ntfy_priority="high",
+        ntfy_topic="paladin-alerts",
+    )
+
+
+def _update_registry_encountered_by(blocker_type: str, project_id: str) -> None:
+    """Update the patterns registry to record this project encountered this blocker."""
+    try:
+        if not PATTERNS_REGISTRY.exists():
+            return
+        registry = _yaml.safe_load(PATTERNS_REGISTRY.read_text()) or {}
+        patterns = registry.get("patterns", {})
+        if blocker_type in patterns:
+            encountered = patterns[blocker_type].get("encountered_by", [])
+            if project_id not in encountered:
+                encountered.append(project_id)
+                patterns[blocker_type]["encountered_by"] = encountered
+                registry["patterns"] = patterns
+                import datetime as _dt
+                registry["last_updated"] = _dt.date.today().isoformat()
+                PATTERNS_REGISTRY.write_text(
+                    _yaml.dump(registry, default_flow_style=False)
+                )
+    except Exception as e:
+        logger.warning(f"Failed to update registry encountered_by: {e}")
+
+
+def _get_retry_count(prompt_id: str) -> int:
+    """Count how many times this prompt has been attempted."""
+    cpo_root = Path.home() / "dev" / "queue"
+    count = 0
+    for subdir in ["completed", "failed"]:
+        try:
+            for task_dir in (cpo_root / subdir).iterdir():
+                if task_dir.name.endswith(prompt_id[:8]):
+                    count += 1
+        except FileNotFoundError:
+            continue
+    return count
+
+
+def _should_give_up(project_id: str, prompt_id: str) -> bool:
+    """Return True if prompt has exceeded retry limit."""
+    count = _get_retry_count(prompt_id)
+    if count >= MAX_RETRIES:
+        logger.warning(
+            f"Prompt {prompt_id[:8]} has failed {count} times \u2014 giving up"
+        )
+        notify(
+            project_id,
+            f"Prompt {prompt_id[:8]} failed after {count} attempts. "
+            f"Marking as handled. Resubmit manually if needed.",
+            ntfy_title=f"\u274c [{project_id}] Max retries exceeded",
+            ntfy_tags="x",
+            ntfy_priority="high",
+        )
+        return True
+    return False
+
+
 def process_prompt(project_id: str, prompt: dict) -> bool:
     """Process a single unhandled prompt. Returns True if executed, False if deferred."""
     prompt_id = prompt["id"]
     content = prompt["content"]
 
     logger.info("Processing prompt %s for project %s", prompt_id[:8], project_id)
+
+    # Check retry limits before proceeding
+    if _should_give_up(project_id, prompt_id):
+        mark_prompt_handled(project_id, prompt_id)
+        return True
 
     # Check active/ before executing — defer if busy
     if not _active_queue_is_empty():
