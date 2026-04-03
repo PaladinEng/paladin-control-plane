@@ -62,6 +62,19 @@ def _pre_flight_section(payload: dict, config: dict) -> str:
 6. GitHub dedupe: SKIP (repo expected to exist for this mode).
 """
 
+    local_dedupe = ""
+    if mode == "existing-repo":
+        github_url = payload.get("github_url", "")
+        local_dedupe = f"""4. Local directory check: if ~/projects/{slug}/ exists:
+   a. Run `cd ~/projects/{slug} && git remote get-url origin` to get the current remote URL.
+   b. If the remote URL matches "{github_url}" — this is the expected repo. Log "Local clone found with matching remote — will reuse." and CONTINUE (do not halt).
+   c. If the remote URL does NOT match — emit needs-input via POST http://localhost:8080/api/projects/{slug}/needs-input
+      with {{"question": "Directory ~/projects/{slug}/ exists but its remote URL does not match {github_url}. Found: <actual_url>. Please resolve the conflict.", "task_id": "{payload['task_id']}"}}
+      and HALT.
+   d. If ~/projects/{slug}/ does not exist — continue to step 5 (clone will happen in execution)."""
+    else:
+        local_dedupe = f"""4. Local dedupe: check if ~/projects/{slug}/ exists. If found, emit needs-input and halt."""
+
     return f"""{config_warning}
 ## Pre-flight Checks (MANDATORY — execute in order, halt on first failure)
 
@@ -72,7 +85,7 @@ def _pre_flight_section(payload: dict, config: dict) -> str:
    emit needs-input via POST http://localhost:8080/api/projects/{slug}/needs-input
    with {{"question": "Slug '{slug}' is in the ignore list", "task_id": "{payload['task_id']}"}}
    and HALT. Do not create any files.
-4. Local dedupe: check if ~/projects/{slug}/ exists. If found, emit needs-input and halt.
+{local_dedupe}
 5. Runtime dedupe: check ~/paladin-control/data/projects/ for meta.json with matching id or github_url.
    If found, emit needs-input and halt.
 {github_dedupe}
@@ -93,22 +106,63 @@ def _mode_steps(payload: dict) -> str:
     tech_prefs = payload.get("tech_preferences", "") or ""
 
     if mode == "existing-repo":
+        compliance = _load_config().get("compliance", {})
+        required_files = compliance.get("required_files", [])
+        required_files_str = ", ".join(f'`{f}`' for f in required_files)
+
         return f"""## Mode: existing-repo
 
-1. Clone: `git clone {github_url} ~/projects/{slug}`
-2. Read README and any docs/ — build understanding of project purpose.
-3. Generate context files (see Context File Standards below).
-4. Self-validate against compliance checklist (see Self-Validation below).
-5. Commit context files:
-   ```
-   cd ~/projects/{slug}
-   git add context/ CLAUDE.md
-   git commit -m 'chore: add paladin context files'
-   git push
-   ```
-6. Register (see Registration Contract below).
-7. Call provisioning-complete: `curl -s -X POST http://localhost:8080/api/projects/{slug}/provisioning-complete`
-8. Print FINISHED WORK
+### Step 1 — Determine local state
+
+Check whether ~/projects/{slug}/ already exists (it may have been confirmed in pre-flight).
+
+**If ~/projects/{slug}/ does NOT exist:**
+- Clone: `git clone {github_url} ~/projects/{slug}`
+- Then proceed to Step 2b (generate all context files).
+
+**If ~/projects/{slug}/ DOES exist (local clone confirmed in pre-flight):**
+- Do NOT clone — the repo is already present.
+- Check the `context/` directory to determine which sub-path to follow.
+
+### Step 2 — Context file decision tree
+
+The required compliance files are: {required_files_str}
+
+**Case A — context/ exists and ALL required files are present and non-empty:**
+- Skip context generation entirely.
+- Log: "Existing compliant project — registering with dashboard only."
+- Proceed directly to Step 3 (self-validate and register).
+
+**Case B — context/ exists but some required files are missing or empty:**
+- Do NOT regenerate files that already exist and are non-empty.
+- Read README and any docs/ — build understanding of project purpose.
+- Generate ONLY the missing or empty files (see Context File Standards below).
+- Log which files were generated and which were skipped.
+- Commit only the newly generated files:
+  ```
+  cd ~/projects/{slug}
+  git add context/ CLAUDE.md
+  git commit -m 'chore: add missing paladin context files'
+  git push
+  ```
+
+**Case C — context/ directory does not exist:**
+- Read README and any docs/ — build understanding of project purpose.
+- Generate all context files (see Context File Standards below).
+- Commit context files:
+  ```
+  cd ~/projects/{slug}
+  git add context/ CLAUDE.md
+  git commit -m 'chore: add paladin context files'
+  git push
+  ```
+
+### Step 3 — Validate and register
+
+1. Self-validate against compliance checklist (see Self-Validation below).
+2. Register (see Registration Contract below).
+3. Call provisioning-complete: `curl -s -X POST http://localhost:8080/api/projects/{slug}/provisioning-complete`
+4. Print FINISHED WORK
 """
 
     elif mode == "new-repo":
