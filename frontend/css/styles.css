@@ -1101,14 +1101,14 @@ pre code {
 
 .thread-event-text {
     font-size: 12px;
-    color: var(--text-muted);
+    color: var(--text-secondary);
 }
 
 .thread-system {
     justify-content: center;
     font-size: 12px;
     font-style: italic;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     text-align: center;
     padding: 4px 0;
 }
@@ -1534,6 +1534,48 @@ pre code {
 .mode-radio input[type="radio"] {
     margin: 0;
     accent-color: var(--accent);
+}
+
+.mode-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: help;
+    flex-shrink: 0;
+    margin-left: 2px;
+}
+
+.mode-tooltip .mode-tooltip-text {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface-raised, #2d333b);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 400;
+    white-space: nowrap;
+    z-index: 100;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.mode-tooltip:hover .mode-tooltip-text {
+    visibility: visible;
+    opacity: 1;
 }
 
 .form-hint {

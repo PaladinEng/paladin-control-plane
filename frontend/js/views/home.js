@@ -114,10 +114,10 @@ function renderNewProjectForm() {
         <div class="form-field">
             <label>Creation mode</label>
             <div class="mode-selector" id="np-mode-selector">
-                <label class="mode-radio"><input type="radio" name="np-mode" value="existing-repo"> Existing repo</label>
-                <label class="mode-radio"><input type="radio" name="np-mode" value="new-repo" checked> New repo</label>
-                <label class="mode-radio"><input type="radio" name="np-mode" value="imported-repo"> Import repo</label>
-                <label class="mode-radio"><input type="radio" name="np-mode" value="prompted-start"> From brief</label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="existing-repo"> Existing repo <span class="mode-tooltip">?<span class="mode-tooltip-text">Clone a PaladinEng repo and register it with the dashboard</span></span></label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="new-repo" checked> New repo <span class="mode-tooltip">?<span class="mode-tooltip-text">Create a new GitHub repo and scaffold it from a brief</span></span></label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="imported-repo"> Import repo <span class="mode-tooltip">?<span class="mode-tooltip-text">Adopt someone else's repo — Claude reads the codebase and generates context files</span></span></label>
+                <label class="mode-radio"><input type="radio" name="np-mode" value="prompted-start"> From brief <span class="mode-tooltip">?<span class="mode-tooltip-text">Claude writes the initial codebase from a detailed brief</span></span></label>
             </div>
         </div>
 
