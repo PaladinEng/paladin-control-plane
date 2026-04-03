@@ -94,13 +94,19 @@ def _determine_status(
         except Exception:
             pass
 
-    # 3. Check prompt queue for unhandled prompts
+    # 3. Check prompt queue for unhandled prompts (and parked state)
     if project_id:
         try:
-            from backend.services.thread_service import get_prompt_queue
+            from backend.services.thread_service import _read_full_queue
 
-            if get_prompt_queue(project_id):
+            queue = _read_full_queue(project_id)
+            parked = [e for e in queue if not e.get("handled") and e.get("parked")]
+            executable = [e for e in queue
+                          if not e.get("handled") and not e.get("parked")]
+            if executable:
                 return "queued"
+            if parked:
+                return "parked"  # All pending work is parked
         except Exception:
             pass
 
@@ -228,7 +234,7 @@ def scan_all_projects() -> list[ProjectDetail]:
     # Use shorter TTL if any project is in an active state
     ttl = CACHE_TTL
     if _cache["data"]:
-        active_states = {"running", "queued", "needs-input", "provisioning"}
+        active_states = {"running", "queued", "needs-input", "provisioning", "parked"}
         if any(p.status in active_states for p in _cache["data"]):
             ttl = 10  # refresh faster when work is happening
     if _cache["data"] is not None and (now - _cache["ts"]) < ttl:

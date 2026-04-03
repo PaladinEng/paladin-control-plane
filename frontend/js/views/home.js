@@ -20,6 +20,7 @@ function statusBadge(status) {
         running:     { cls: 'badge-running',       label: 'Running' },
         queued:      { cls: 'badge-queued',        label: 'Queued' },
         provisioning:{ cls: 'badge-provisioning',  label: 'Provisioning' },
+        'parked':    { cls: 'badge-parked',        label: 'Parked' },
     };
     const s = map[status] || { cls: 'badge-idle', label: status || 'Unknown' };
     return `<span class="status-badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;

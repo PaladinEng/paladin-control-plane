@@ -6,7 +6,7 @@ class ProjectSummary(BaseModel):
     id: str
     name: str
     path: str
-    status: str  # active, idle, error
+    status: str  # active, idle, error, running, queued, parked, needs-input, provisioning
     current_state: str  # first paragraph from STATUS.md
     active_tasks: list[str]  # from WORKQUEUE Active Sprint
     last_updated: Optional[str] = None

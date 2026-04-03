@@ -156,6 +156,7 @@ function statusBadge(status) {
         running:       { cls: 'badge-running',       label: 'Running' },
         queued:        { cls: 'badge-queued',        label: 'Queued' },
         provisioning:  { cls: 'badge-provisioning',  label: 'Provisioning' },
+        'parked':      { cls: 'badge-parked',        label: 'Parked' },
     };
     const s = map[status] || { cls: 'badge-idle', label: status || 'Unknown' };
     return `<span class="status-badge ${s.cls}"><span class="dot"></span>${s.label}</span>`;
@@ -536,6 +537,16 @@ function renderProjectData(content, project) {
             ) : ''}
         </div>`;
 
+    // Parked banner
+    const parkedBanner = project.status === 'parked' ? `
+        <div class="parked-banner">
+            <span class="parked-icon">\u23F8\uFE0F</span>
+            <span class="parked-text">
+                Work paused — waiting for blocker to be cleared.
+                Respond to the blocked task below to resume.
+            </span>
+        </div>` : '';
+
     // Provisioning progress panel
     const isProvisioning = project.status === 'provisioning';
     const provisioningPanel = isProvisioning ? `
@@ -613,6 +624,7 @@ function renderProjectData(content, project) {
                 ${leftPanel}
                 ${rightPanel}
             </div>
+            ${parkedBanner}
             ${threadPanel}
         </div>`;
 
