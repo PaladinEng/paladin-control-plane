@@ -830,6 +830,10 @@ def handle_blocker(project_id: str, blocker: dict, task_name: str) -> None:
     pattern = registry.get("patterns", {}).get(blocker_type, {})
     auto_fix = pattern.get("auto_fix", False)
 
+    # Auto-register novel blocker types
+    if blocker_type not in registry.get("patterns", {}):
+        _add_type_to_registry(blocker_type)
+
     # Attempt autonomous resolution
     if auto_fix:
         resolved = _attempt_autonomous_fix(blocker_type, blocker, project_id)
@@ -1019,6 +1023,32 @@ def _update_registry_encountered_by(blocker_type: str, project_id: str) -> None:
         logger.warning(f"Failed to update registry encountered_by: {e}")
 
 
+def _add_type_to_registry(blocker_type: str) -> None:
+    """Add a new blocker type to the patterns registry."""
+    try:
+        if not PATTERNS_REGISTRY.exists():
+            return
+        registry = _yaml.safe_load(PATTERNS_REGISTRY.read_text()) or {}
+        patterns = registry.get("patterns", {})
+        if blocker_type not in patterns:
+            import datetime
+            patterns[blocker_type] = {
+                "file": f"{blocker_type}.md",
+                "description": f"Auto-created type: {blocker_type}",
+                "auto_fix": False,
+                "escalate_after_attempts": 1,
+                "encountered_by": [],
+            }
+            registry["patterns"] = patterns
+            registry["last_updated"] = datetime.date.today().isoformat()
+            PATTERNS_REGISTRY.write_text(
+                _yaml.dump(registry, default_flow_style=False)
+            )
+            logger.info(f"Added new blocker type to registry: {blocker_type}")
+    except Exception as e:
+        logger.warning(f"Failed to add type to registry: {e}")
+
+
 def _get_retry_count(prompt_id: str) -> int:
     """Count how many times this prompt has been attempted."""
     cpo_root = Path.home() / "dev" / "queue"
@@ -1156,7 +1186,12 @@ def resolve_blocker_from_response(
     _active_blockers[blocker_id]["resolution"] = response_text
 
     # Write resolution to patterns library
-    _record_resolution_in_patterns(blocker_type, project_id, response_text)
+    _record_resolution_in_patterns(
+        blocker_type,
+        project_id,
+        response_text,
+        blocker_data=blocker_data.get("blocker_data"),
+    )
 
     # Unpark affected prompts
     count = unpark_prompts_for_blocker(blocker_id)
@@ -1176,31 +1211,85 @@ def resolve_blocker_from_response(
 
 
 def _record_resolution_in_patterns(
-    blocker_type: str, project_id: str, resolution: str
+    blocker_type: str,
+    project_id: str,
+    resolution: str,
+    blocker_data: dict = None,
 ) -> None:
-    """Append resolution to the pattern file for this blocker type."""
+    """
+    Append a structured resolution entry to the pattern file.
+    Also commits the updated pattern file to paladin-context-system.
+    """
     import datetime
 
     pattern_file = PATTERNS_DIR / f"{blocker_type}.md"
     if not pattern_file.exists():
-        pattern_file = PATTERNS_DIR / "unknown.md"
+        # Create a new pattern file for this type
+        logger.info(f"Creating new pattern file for type: {blocker_type}")
+        pattern_file.parent.mkdir(parents=True, exist_ok=True)
+        pattern_file.write_text(
+            f"# Blocker Pattern: {blocker_type}\n\n"
+            f"## Description\nAuto-created from first occurrence.\n\n"
+            f"## Symptoms\n(to be documented)\n\n"
+            f"## Autonomous Fix Attempts\n1. None defined yet\n\n"
+            f"## Escalation Instructions\nCheck CPO logs.\n\n"
+            f"## Resolution History\n"
+        )
 
     try:
         content = pattern_file.read_text(encoding="utf-8")
         date = datetime.date.today().isoformat()
+
+        symptoms = ""
+        if blocker_data and blocker_data.get("symptoms"):
+            symptoms = "\nSymptoms observed:\n" + "\n".join(
+                f"  - {s}" for s in blocker_data["symptoms"]
+            )
+
         entry = (
             f"\n### {date} — {project_id}\n"
-            f"Resolution: {resolution}\n"
+            f"Resolution: {resolution}{symptoms}\n"
         )
-        # Append to Resolution History section
+
         if "## Resolution History" in content:
+            # Insert after the header line
             content = content.replace(
-                "(populated automatically by supervisor)",
-                f"(populated automatically by supervisor){entry}"
+                "## Resolution History\n",
+                f"## Resolution History\n{entry}"
+            )
+            content = content.replace(
+                "## Resolution History\n(populated automatically by supervisor)",
+                f"## Resolution History\n{entry}"
             )
         else:
-            content += f"\n## Resolution History{entry}"
+            content += f"\n## Resolution History\n{entry}"
+
         pattern_file.write_text(content, encoding="utf-8")
+        logger.info(f"Recorded resolution in {pattern_file.name}")
+
+        # Commit the updated pattern file
+        paladin_context_path = (
+            Path.home() / "projects" / "paladin-context-system"
+        )
+        if paladin_context_path.exists():
+            try:
+                subprocess.run(
+                    ["git", "add", str(pattern_file)],
+                    cwd=str(paladin_context_path), timeout=10
+                )
+                subprocess.run(
+                    ["git", "commit", "-m",
+                     f"docs(patterns): record {blocker_type} resolution from {project_id}"],
+                    cwd=str(paladin_context_path), timeout=30
+                )
+                subprocess.run(
+                    ["git", "push", "origin", "main"],
+                    cwd=str(paladin_context_path), timeout=30
+                )
+                logger.info(f"Committed pattern update for {blocker_type}")
+            except Exception as e:
+                logger.warning(f"Failed to commit pattern update: {e}")
+
     except Exception as e:
         logger.warning(f"Failed to record resolution in patterns: {e}")
 
