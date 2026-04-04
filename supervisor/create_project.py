@@ -149,6 +149,16 @@ Record the following from config files for use in context generation:
 - **Monorepo structure**: workspace packages and their purposes
 - **Key directories**: src/, lib/, apps/, packages/, etc. and their roles
 
+#### 4. Root CONTEXT.md Copy
+
+After processing all files above, check for a root-level CONTEXT.md:
+
+- If ~/projects/{slug}/CONTEXT.md exists AND ~/projects/{slug}/context/CONTEXT.md does NOT exist:
+  copy ~/projects/{slug}/CONTEXT.md to ~/projects/{slug}/context/CONTEXT.md
+- If ~/projects/{slug}/context/CONTEXT.md already exists: skip — do not overwrite.
+
+This step runs unconditionally during intake, regardless of which decision tree case (A, B, or C) applies.
+
 After the intake pass, proceed to the context file decision tree using the enriched understanding.
 """
 
