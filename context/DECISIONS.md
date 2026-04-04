@@ -73,3 +73,10 @@ Options considered:
 Decision: Skip parked prompts, continue processing other projects
 Rationale: A blocker in one project should not prevent progress in unrelated projects. The queue evaluator marks blocked prompts as `parked` and moves on, returning to them when the blocker resolves. This maximizes overnight and autonomous execution throughput.
 Consequences: Queue ordering becomes slightly more complex. Parked prompts need periodic re-evaluation. The AERS-013 backlog item will add parallel execution with full blocker isolation.
+
+## Decision 9: Queue-handoff.sh runtime path is codex-project-orchestrator
+Date: 2026-04-04
+Discovery: The runtime copy of queue-handoff.sh that the supervisor actually uses is at ~/dev/projects/codex-project-orchestrator/scripts/queue-handoff.sh, NOT ~/dev/scripts/queue-handoff.sh as previously assumed. Both paths exist and contain identical files (synced as of 2026-04-04), but the supervisor invokes scripts from the codex-project-orchestrator path.
+Decision: Document ~/dev/projects/codex-project-orchestrator/scripts/ as the canonical runtime path for all queue scripts (queue-handoff.sh, queue-run-codex.sh, queue-worker-full-pass.sh).
+Rationale: Incorrect path documentation could cause future sync operations to update the wrong file, leading to divergent behavior between what's tested and what runs in production.
+Consequences: Any future fixes to queue scripts must target ~/dev/projects/codex-project-orchestrator/scripts/ as the primary path. The ~/dev/scripts/ copy may be a convenience symlink or stale copy — treat codex-project-orchestrator as authoritative.

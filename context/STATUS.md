@@ -192,7 +192,7 @@ None. All dependencies satisfied.
 ## Known Issues
 
 1. **cloudflared service type:** Runs as systemd SYSTEM service, not user service (differs from initial documentation but functions correctly)
-2. **Queue runner path:** queue-run-codex.sh is in ~/dev/projects/codex-project-orchestrator/scripts/ not ~/dev/scripts/ (documented for reference)
+2. **Queue runner path:** queue-run-codex.sh and queue-handoff.sh runtime copies are in ~/dev/projects/codex-project-orchestrator/scripts/ (not ~/dev/scripts/ as previously documented). The supervisor uses the codex-project-orchestrator path.
 
 ## Session History
 
