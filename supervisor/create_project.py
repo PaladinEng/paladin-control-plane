@@ -412,6 +412,13 @@ status: active
   - Key directories and their purposes from the file tree scan
   - Tech stack summary (languages, frameworks, key dependencies)
   - Any operational notes from existing CLAUDE.md or codex.md that should carry forward
+- **Known Issues and Resolutions section** — add this scaffold at the end of every generated CLAUDE.md:
+  ```markdown
+
+  ## Known Issues and Resolutions
+
+  <!-- Entries are added automatically by the supervisor when blockers are resolved. -->
+  ```
 
 ### STATUS.md — Initial Content
 - Phase 0 — Project created via PCP on {today}

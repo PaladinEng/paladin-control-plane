@@ -1193,6 +1193,15 @@ def resolve_blocker_from_response(
         blocker_data=blocker_data.get("blocker_data"),
     )
 
+    # Update project CLAUDE.md with known issue resolution
+    blocker_info = blocker_data.get("blocker_data", {}) or {}
+    _update_project_claude_md(
+        project_id,
+        blocker_type,
+        blocker_info.get("description", "See blocker history"),
+        blocker_info.get("fix_instructions", response_text),
+    )
+
     # Unpark affected prompts
     count = unpark_prompts_for_blocker(blocker_id)
 
@@ -1292,6 +1301,86 @@ def _record_resolution_in_patterns(
 
     except Exception as e:
         logger.warning(f"Failed to record resolution in patterns: {e}")
+
+
+def _update_project_claude_md(
+    project_id: str,
+    blocker_type: str,
+    description: str,
+    fix_instructions: str,
+) -> None:
+    """
+    Add or update a Known Issues entry in the project's CLAUDE.md.
+    Creates the Known Issues section if it doesn't exist.
+    """
+    import datetime
+
+    if not _PROJECT_ID_RE.match(project_id):
+        logger.warning(f"Invalid project_id for CLAUDE.md update: {project_id}")
+        return
+
+    project_path = Path.home() / "projects" / project_id
+    claude_md = project_path / "CLAUDE.md"
+
+    if not claude_md.exists():
+        logger.info(f"No CLAUDE.md found for {project_id} — skipping update")
+        return
+
+    try:
+        content = claude_md.read_text(encoding="utf-8")
+        date = datetime.date.today().isoformat()
+
+        new_entry = (
+            f"\n### {blocker_type} (last seen: {date})\n"
+            f"Symptom: {description}\n"
+            f"Fix: {fix_instructions}\n"
+        )
+
+        known_issues_header = "## Known Issues and Resolutions"
+
+        if known_issues_header in content:
+            # Check if this blocker type already has an entry
+            if f"### {blocker_type}" in content:
+                # Update the existing entry's last seen date
+                content = re.sub(
+                    rf"### {re.escape(blocker_type)} \(last seen: [^\)]+\)",
+                    f"### {blocker_type} (last seen: {date})",
+                    content,
+                )
+            else:
+                # Add new entry to the section
+                content = content.replace(
+                    known_issues_header + "\n",
+                    known_issues_header + "\n" + new_entry,
+                )
+        else:
+            # Add the entire section at the end
+            content += f"\n{known_issues_header}\n{new_entry}"
+
+        claude_md.write_text(content, encoding="utf-8")
+        logger.info(f"Updated CLAUDE.md for {project_id}: added {blocker_type}")
+
+        # Commit the update
+        try:
+            subprocess.run(
+                ["git", "add", "CLAUDE.md"],
+                cwd=str(project_path), timeout=10,
+            )
+            subprocess.run(
+                ["git", "commit", "-m",
+                 f"docs(claude): update Known Issues — {blocker_type} resolution"],
+                cwd=str(project_path), timeout=30,
+            )
+            subprocess.run(
+                ["git", "push", "origin", "main"],
+                cwd=str(project_path), timeout=30,
+            )
+            logger.info(f"Committed CLAUDE.md update for {project_id}")
+        except Exception as e:
+            logger.warning(f"Failed to commit CLAUDE.md update: {e}")
+
+    except Exception as e:
+        logger.warning(f"Failed to update CLAUDE.md for {project_id}: {e}")
 
 
 def process_prompt(project_id: str, prompt: dict) -> bool:
