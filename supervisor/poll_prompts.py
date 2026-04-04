@@ -846,6 +846,14 @@ Before starting work, check for a blocker.json file in the task directory
 
 If blocker.json does not exist, this is a fresh run — proceed normally.
 
+## How to approach this prompt
+
+- Read relevant files yourself — the prompt describes intent, not implementation
+- Start working immediately on the first section — do not read everything first
+- Commit after each logical unit of work — not at the end
+- If blocked, write blocker.json — do not just exit silently
+- Print FINISHED WORK as your absolute last action after all commits
+
 ## Objective
 {content}
 {checkpoint_context}

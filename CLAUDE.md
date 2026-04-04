@@ -145,6 +145,29 @@ Pattern: Opus lead + Sonnet workers for parallel tasks.
 - **MEDIUM:** write plan to specs/plan-<task>-<date>.md, validate before executing
 - **HIGH:** write plan, STOP, write to ~/projects/NOTIFY.md — do not execute
 
+## Prompt Authoring Guidelines
+
+Prompts submitted via the dashboard describe WHAT to implement,
+not HOW. When you receive a prompt:
+
+1. Read the relevant files yourself — do not expect inline code
+   to be provided. The prompt describes intent and acceptance criteria.
+
+2. Start working immediately — do not read the entire prompt before
+   starting. Read one section, implement it, commit, then continue.
+
+3. Commit at each logical checkpoint — not at the end. If you hit
+   a problem, earlier checkpoints are preserved.
+
+4. Write blocker.json if you cannot proceed — do not just exit.
+   Describe what is blocked and what the fix requires.
+
+5. Print FINISHED WORK as your absolute last action — after all
+   commits, after all verification, after writing any summaries.
+
+6. Keep implementations focused — if a prompt asks for 3 things,
+   implement them one at a time with a commit after each.
+
 ## Known Issues
 <!-- Auto-updated by AERS on blocker resolution. Do not remove this section. -->
 _No known issues at this time._

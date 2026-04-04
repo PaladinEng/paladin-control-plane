@@ -30,6 +30,24 @@
 - Do not modify k8s cluster resources from this project
 - Do not store secrets in git — use environment variables or systemd EnvironmentFile
 
+## Prompt Authoring
+
+When writing prompts for the dashboard, follow these principles:
+
+- **Describe intent, not implementation** — prompts should say WHAT to build
+  and the acceptance criteria, not provide inline code or step-by-step HOW.
+- **Structure prompts in sections** — the agent reads and implements one
+  section at a time, committing after each. Front-load the most important work.
+- **Include acceptance criteria** — specify how to verify the work is correct
+  (e.g. curl commands, grep checks, test commands).
+- **Specify blast radius** — if the change touches shared infrastructure or
+  services, note the expected blast radius (LOW/MEDIUM/HIGH).
+- **Reference files by path** — point to specific files that need changes
+  rather than describing them abstractly.
+- **One concern per prompt** — if you have three unrelated tasks, submit
+  three prompts. The agent commits incrementally and each prompt should
+  be a coherent unit of work.
+
 ## Session End Checklist
 - [ ] `curl -s localhost:8080/health` returns 200 (if API is deployed)
 - [ ] `systemctl --user status paladin-api` shows active (if deployed)
