@@ -198,6 +198,35 @@ Rules:
 5. **Minimum one checkpoint** per task. Even if the task is small,
    commit before writing the thread.jsonl response entry.
 
+## Blocker Reporting
+
+If you encounter an error you cannot resolve autonomously, do NOT just fail.
+Before exiting, write a blocker report to the task directory:
+
+1. Identify the blocker type from this list:
+   github-auth, api-down, missing-credential, path-issue, git-conflict,
+   disk-full, service-crash, network-unreachable, missing-dependency,
+   permission-denied, trust-prompt, unknown
+
+2. Write ~/dev/queue/active/{task_id}/blocker.json with this exact format:
+{{{{
+  "type": "<type from list above>",
+  "fingerprint": "<type>-{task['project_id']}",
+  "description": "<one sentence: what failed and why>",
+  "symptoms": ["<error message 1>", "<error message 2>"],
+  "fix_instructions": "<exact steps the user must take to clear this blocker>",
+  "resumable": true,
+  "checkpoint_commit": "<git commit hash of last checkpoint, or null>",
+  "completed_steps": ["<step 1 that was completed>", "<step 2>"],
+  "remaining_steps": ["<step that was blocked>", "<subsequent steps>"],
+  "affects_projects": ["{task['project_id']}"],
+  "timestamp": "<ISO timestamp>"
+}}}}
+
+3. After writing blocker.json, print FINISHED WORK and exit cleanly.
+   Do NOT exit with an error code — the supervisor reads blocker.json
+   to determine this was a blocker, not a crash.
+
 ## Execution context
 You are Claude Code running as part of the Paladin overnight automation.
 This task was queued as overnight-ready with blast-radius: {task['blast_radius']}.

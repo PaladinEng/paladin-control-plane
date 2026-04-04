@@ -503,6 +503,112 @@ def _execute_cpo_task(project_id: str, task_name: str) -> str:
         return "failed"
 
 
+def _git_commit_since(project_path: str, since_timestamp: str) -> str | None:
+    """
+    Return the most recent git commit hash in project_path made after
+    since_timestamp (ISO format). Returns None if no commit found.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%H", "--after", since_timestamp, "-1"],
+            capture_output=True, text=True, timeout=10,
+            cwd=project_path,
+        )
+        commit = result.stdout.strip()
+        return commit if commit else None
+    except Exception:
+        return None
+
+
+def _read_blocker_json(task_dir: Path) -> dict | None:
+    """Read blocker.json from task directory if it exists."""
+    blocker_file = task_dir / "blocker.json"
+    if not blocker_file.exists():
+        return None
+    try:
+        return json.loads(blocker_file.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _find_task_dir(task_name: str) -> Path | None:
+    """Find a task directory across completed/, failed/, and active/."""
+    cpo_root = Path.home() / "dev" / "queue"
+    for subdir in ["completed", "failed", "active"]:
+        d = cpo_root / subdir / task_name
+        if d.exists():
+            return d
+    return None
+
+
+def reconcile_outcome(
+    cpo_exit_success: bool,
+    timed_out: bool,
+    project_path: str,
+    task_start_time: str,
+    task_dir: Path,
+) -> tuple[str, str]:
+    """
+    Determine the true outcome of a task execution.
+
+    Returns (outcome_code, human_message) where outcome_code is one of:
+    completed, completed-no-commit, completed-exit-signal-failed,
+    blocked, failed, completed-then-hung, failed-timeout
+
+    task_start_time: ISO timestamp string of when the task started
+    task_dir: Path to the CPO task directory (may be in active/ or failed/)
+    """
+    commit = _git_commit_since(project_path, task_start_time)
+    blocker = _read_blocker_json(task_dir)
+
+    if timed_out:
+        if commit:
+            return (
+                "completed-then-hung",
+                f"Task completed and committed ({commit[:8]}) but process hung "
+                f"after completion. Auto-killed. No retry needed."
+            )
+        else:
+            return (
+                "failed-timeout",
+                "Task timed out without committing any work. Will retry."
+            )
+
+    if cpo_exit_success:
+        if commit:
+            return (
+                "completed",
+                f"Task completed successfully. Commit: {commit[:8]}."
+            )
+        else:
+            return (
+                "completed-no-commit",
+                "Task exited successfully but made no git commit. "
+                "Work may exist as uncommitted changes. Review and commit manually if needed."
+            )
+
+    # Non-zero exit
+    if blocker:
+        return (
+            "blocked",
+            f"Task paused: {blocker.get('type', 'unknown')} blocker. "
+            f"{blocker.get('description', '')} "
+            f"Fix: {blocker.get('fix_instructions', 'See blocker.json for details.')}"
+        )
+
+    if commit:
+        return (
+            "completed-exit-signal-failed",
+            f"Task completed and committed ({commit[:8]}) but exit signal failed. "
+            f"This is a known issue — no action needed."
+        )
+
+    return (
+        "failed",
+        "Task failed without committing any work and without a blocker report."
+    )
+
+
 def _get_checkpoint_commits(project_path: str, since_timestamp: float,
                             max_commits: int = 20) -> list[dict]:
     """
@@ -669,6 +775,50 @@ Rules:
      "completed_steps": [...], "remaining_steps": [...]}}`
 5. **Minimum one checkpoint** per task. Even if the task is small,
    commit before writing the thread.jsonl response entry.
+
+## Blocker Reporting
+
+If you encounter an error you cannot resolve autonomously, do NOT just fail.
+Before exiting, write a blocker report to the task directory:
+
+1. Identify the blocker type from this list:
+   github-auth, api-down, missing-credential, path-issue, git-conflict,
+   disk-full, service-crash, network-unreachable, missing-dependency,
+   permission-denied, trust-prompt, unknown
+
+2. Write ~/dev/queue/active/{task_id}/blocker.json with this exact format:
+{{{{
+  "type": "<type from list above>",
+  "fingerprint": "<type>-{project_id}",
+  "description": "<one sentence: what failed and why>",
+  "symptoms": ["<error message 1>", "<error message 2>"],
+  "fix_instructions": "<exact steps the user must take to clear this blocker>",
+  "resumable": true,
+  "checkpoint_commit": "<git commit hash of last checkpoint, or null>",
+  "completed_steps": ["<step 1 that was completed>", "<step 2>"],
+  "remaining_steps": ["<step that was blocked>", "<subsequent steps>"],
+  "affects_projects": ["{project_id}"],
+  "timestamp": "<ISO timestamp>"
+}}}}
+
+3. After writing blocker.json, print FINISHED WORK and exit cleanly.
+   Do NOT exit with an error code — the supervisor reads blocker.json
+   to determine this was a blocker, not a crash.
+
+Example blocker.json for an expired GitHub token:
+{{{{
+  "type": "github-auth",
+  "fingerprint": "github-auth-{project_id}",
+  "description": "git push returned 403 — GitHub OAuth token expired",
+  "symptoms": ["fatal: unable to access: The requested URL returned error: 403"],
+  "fix_instructions": "Run on UM790: gh auth login --web\\nSelect GitHub.com\\nAuthenticate in browser",
+  "resumable": true,
+  "checkpoint_commit": "abc1234",
+  "completed_steps": ["Updated project_scanner.py", "Committed scanner changes"],
+  "remaining_steps": ["Push to origin", "Restart API service"],
+  "affects_projects": ["{project_id}"],
+  "timestamp": "2026-04-03T14:22:00Z"
+}}}}
 
 ## Execution context
 You are Claude Code running autonomously via the Paladin Control Plane
@@ -1417,41 +1567,64 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
 
     logger.info("Routed prompt %s → task %s", prompt_id[:8], task_id)
 
-    # Execute the task — prompt is only marked handled on success or
-    # by the hang detector when work was committed. This ensures failed
-    # or hung tasks that did no work can be retried.
+    # Record start time for outcome reconciliation
+    task_start_time = datetime.now(timezone.utc).isoformat()
+
+    # Execute the task
     result = _execute_cpo_task(project_id, task_id)
 
-    if result == "success":
+    # Reconcile the true outcome using git log + blocker.json
+    project_path = _get_project_path(project_id)
+    task_dir = _find_task_dir(task_id)
+    if task_dir is None:
+        # Fallback — task dir not found (shouldn't happen)
+        task_dir = QUEUE_ROOT / task_id
+
+    outcome, human_message = reconcile_outcome(
+        cpo_exit_success=(result == "success"),
+        timed_out=(result == "timeout"),
+        project_path=project_path,
+        task_start_time=task_start_time,
+        task_dir=task_dir,
+    )
+
+    logger.info("Task %s outcome: %s", task_id, outcome)
+
+    # Outcome-specific notification prefixes and handling
+    outcome_config = {
+        "completed": ("\u2705", "white_check_mark", "default"),
+        "completed-no-commit": ("\u26a0\ufe0f", "warning", "default"),
+        "completed-exit-signal-failed": ("\u2705", "white_check_mark", "default"),
+        "blocked": ("\u23f8\ufe0f", "pause_button", "high"),
+        "failed": ("\u274c", "x", "high"),
+        "completed-then-hung": ("\u2705", "white_check_mark", "default"),
+        "failed-timeout": ("\u274c", "timer_clock", "high"),
+    }
+    prefix, tags, priority = outcome_config.get(
+        outcome, ("\u2753", "question", "default")
+    )
+
+    notify(
+        project_id,
+        f"{prefix} {human_message}",
+        ntfy_title=f"{prefix} [{project_id}] Task {outcome}",
+        ntfy_tags=tags,
+        ntfy_priority=priority,
+    )
+
+    # Mark prompt handled for all completed* outcomes
+    if outcome.startswith("completed"):
         mark_prompt_handled(project_id, prompt_id)
-        notify(
-            project_id,
-            f"Task {task_id} completed successfully",
-            ntfy_title=f"\u2705 [{project_id}] Task complete",
-            ntfy_tags="white_check_mark",
-            ntfy_priority="default",
-        )
-    elif result == "timeout":
-        # Don't mark handled — hang detector will decide based on
-        # whether work was committed
-        notify(
-            project_id,
-            f"Task {task_id} timed out after 30 minutes. "
-            f"Claude Code may have hung. Check ~/dev/queue/active/ "
-            f"and kill any stuck processes.",
-            ntfy_title=f"\u23f1 [{project_id}] Task timed out",
-            ntfy_tags="timer_clock",
-            ntfy_priority="high",
-        )
-    else:
-        # Don't mark handled — leave for retry on next poll cycle
-        notify(
-            project_id,
-            f"Task {task_id} failed \u2014 check CPO logs",
-            ntfy_title=f"\u274c [{project_id}] Task failed",
-            ntfy_tags="x",
-            ntfy_priority="high",
-        )
+
+    # Handle blockers
+    if outcome == "blocked":
+        blocker = _read_blocker_json(task_dir)
+        if blocker:
+            handle_blocker(project_id, blocker, task_id)
+        mark_prompt_handled(project_id, prompt_id)
+
+    # "failed" and "failed-timeout" are retry-eligible — leave unhandled
+
     return True
 
 
