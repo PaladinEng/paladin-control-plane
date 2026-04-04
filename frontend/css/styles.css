@@ -1745,20 +1745,12 @@ pre code {
         color: var(--text-primary);
     }
 
-    /* Hide project cards grid on desktop — sidebar replaces it */
-    .home-view .projects-grid {
-        display: none;
-    }
-
-    .home-view .archived-section {
-        display: none;
-    }
-
     /* Project view layout adjustments for desktop */
     .project-view .thread-messages {
-        flex: 1;
-        max-height: none;
+        height: 380px;
+        max-height: 380px;
         overflow-y: auto;
+        flex: none;
     }
 
     .project-view .prompt-form {
