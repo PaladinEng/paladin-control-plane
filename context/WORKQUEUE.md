@@ -1,13 +1,37 @@
 # WORKQUEUE — Paladin Control Plane
-Last updated: 2026-04-02T23:15Z
+Last updated: 2026-04-04
 
 ## Active Sprint
 
-(empty — all PCP items complete)
+(empty — all items complete)
 
 ## Recently Completed
 
+- [x] 2026-04-04 AERS-001: Outcome reconciler — classifies task outcomes, triggers recovery
+- [x] 2026-04-04 AERS-002: Blocker registry — tracks blocker types, resolution state
+- [x] 2026-04-04 AERS-003: Queue evaluator — skips parked prompts, continues other work
+- [x] 2026-04-04 AERS-004: Blocker type definitions — 12 initial types
+- [x] 2026-04-04 AERS-005: Parked status value — work paused pending blocker
+- [x] 2026-04-04 AERS-006: Patterns library integration — ~/projects/paladin-context-system/patterns/
+- [x] 2026-04-04 AERS-007: Checkpoint commit protocol — save/resume from checkpoint
+- [x] 2026-04-04 AERS-008: Session resume and blocker.json in task templates
+- [x] 2026-04-04 AERS-009: Enhanced pattern recording — structured entries, auto-commit
+- [x] 2026-04-04 AERS-010: CLAUDE.md Known Issues auto-update on blocker resolution
+- [x] 2026-04-04 AERS-011: End-to-end test suite
+- [x] 2026-04-04 AERS-012: Context file updates across projects
+
 ## P3 Backlog
+
+### [AERS-013] Parallel execution with blocker isolation
+project: paladin-control-plane
+parallel: YES
+blast-radius: MEDIUM
+overnight-ready: NO
+preconditions: AERS-001 through AERS-012 complete
+done-when:
+  - Multiple projects can execute in parallel
+  - Blocker in one project does not affect others
+  - Queue evaluator handles concurrent parked/active states
 
 ### Code quality fixes from session 003 review
 project: paladin-control-plane

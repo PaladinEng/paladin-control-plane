@@ -46,3 +46,30 @@ Options considered:
 Decision: ntfy self-hosted on UM790
 Rationale: Self-hosted means no external dependencies. ntfy iOS app supports instant push notifications. Accessible via Tailscale from anywhere. Claude Code hooks can POST directly to ntfy topics. Deep links can point back to the dashboard for needs-input scenarios.
 Consequences: Requires ntfy server running as systemd service. iOS app must be configured with Tailscale-accessible server URL. No notification history beyond ntfy's built-in cache.
+
+## Decision 6: Blocker types grow organically via patterns library
+Date: 2026-04-04
+Options considered:
+- Option A: Hardcoded blocker type enum — requires code change to add new types
+- Option B: Organic growth via patterns library — new types auto-created on first occurrence
+Decision: Organic growth via patterns library at ~/projects/paladin-context-system/patterns/
+Rationale: Hardcoding blocker types creates friction when new failure modes are discovered. The patterns library allows the system to learn and adapt without code changes. Each new blocker type is recorded as a structured pattern entry on first occurrence, building institutional knowledge over time.
+Consequences: No central enum to validate against. Pattern files are the source of truth. 12 initial types seeded; new types emerge as the system encounters novel failures.
+
+## Decision 7: Resolution triggers CLAUDE.md Known Issues updates
+Date: 2026-04-04
+Options considered:
+- Option A: Manual CLAUDE.md updates — operators must remember to document fixes
+- Option B: Auto-update Known Issues on resolution — future sessions have autonomous fix knowledge
+Decision: Auto-update Known Issues sections in affected project CLAUDE.md files on blocker resolution
+Rationale: When a blocker is resolved, the fix knowledge should be immediately available to future autonomous sessions. Embedding this in CLAUDE.md ensures every session starts with awareness of known issues and their resolutions, preventing re-discovery of solved problems.
+Consequences: CLAUDE.md files grow over time with Known Issues entries. Periodic pruning may be needed for resolved-and-no-longer-relevant issues.
+
+## Decision 8: Queue evaluator skips parked prompts, continues other work
+Date: 2026-04-04
+Options considered:
+- Option A: Stall entire queue when any prompt is blocked — simple but wasteful
+- Option B: Skip parked prompts and continue other projects' work — maximizes throughput
+Decision: Skip parked prompts, continue processing other projects
+Rationale: A blocker in one project should not prevent progress in unrelated projects. The queue evaluator marks blocked prompts as `parked` and moves on, returning to them when the blocker resolves. This maximizes overnight and autonomous execution throughput.
+Consequences: Queue ordering becomes slightly more complex. Parked prompts need periodic re-evaluation. The AERS-013 backlog item will add parallel execution with full blocker isolation.

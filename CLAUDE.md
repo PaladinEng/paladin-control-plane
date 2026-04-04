@@ -144,3 +144,7 @@ Pattern: Opus lead + Sonnet workers for parallel tasks.
 - **LOW/NONE:** proceed autonomously
 - **MEDIUM:** write plan to specs/plan-<task>-<date>.md, validate before executing
 - **HIGH:** write plan, STOP, write to ~/projects/NOTIFY.md — do not execute
+
+## Known Issues
+<!-- Auto-updated by AERS on blocker resolution. Do not remove this section. -->
+_No known issues at this time._

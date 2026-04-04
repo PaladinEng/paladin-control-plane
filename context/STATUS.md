@@ -1,8 +1,10 @@
 # STATUS — Paladin Control Plane
-Last verified: 2026-04-02
+Last verified: 2026-04-04
 
 ## Current State
-All core systems operational and verified via smoke test 2026-04-02. Backend API on port 8080 serving frontend dashboard with GitHub OAuth for public access via Cloudflare Tunnel. Tailscale (10.1.10.x, 100.x.x.x) and localhost bypass authentication. Meta-supervisor running continuously, polling prompt queues every 60s and auto-executing CPO tasks. Overnight timer scheduled for daily execution at 23:00 UTC. ntfy notification service active on port 8090. Archive and restore endpoints fully functional. Project creation system v1.1 with 4-mode support complete. CPO retry path issues fixed with exponential backoff and max retry limits. No blocking issues.
+All core systems operational. Backend API on port 8080 serving frontend dashboard with GitHub OAuth for public access via Cloudflare Tunnel. Tailscale (10.1.10.x, 100.x.x.x) and localhost bypass authentication. Meta-supervisor running continuously, polling prompt queues every 30s and auto-executing CPO tasks. Overnight timer scheduled for daily execution at 23:00 UTC. ntfy notification service active on port 8090. Archive and restore endpoints fully functional. Project creation system v1.1 with 4-mode support complete. CPO retry path issues fixed with exponential backoff and max retry limits.
+
+AERS v1.0 implemented (2026-04-04): Autonomous Error Recovery System comprising outcome reconciler, blocker registry, and queue evaluator. New status value `parked` (work paused pending blocker resolution). Patterns library at ~/projects/paladin-context-system/patterns/ with 12 initial blocker types defined. Known Issues sections in project CLAUDE.md files are auto-updated on blocker resolution. No blocking issues.
 
 ## Services
 
@@ -167,6 +169,18 @@ All core systems operational and verified via smoke test 2026-04-02. Backend API
 | ~/projects/paladin-control-plane/logs/ | Supervisor and overnight logs |
 | ~/.venv/ | Python 3.12+ virtual environment |
 
+## AERS (Autonomous Error Recovery System)
+
+**Status:** v1.0 implemented
+**Components:**
+- Outcome reconciler — classifies task outcomes and triggers recovery flows
+- Blocker registry — tracks 12 initial blocker types, auto-creates new types on first occurrence
+- Queue evaluator — skips parked prompts, continues other projects' work
+
+**Patterns library:** ~/projects/paladin-context-system/patterns/
+**New status values:** `parked` (work paused pending blocker resolution)
+**CLAUDE.md integration:** Known Issues section auto-updated on blocker resolution
+
 ## In Progress
 
 None. All systems operational.
@@ -194,8 +208,9 @@ None. All dependencies satisfied.
 - Overnight 2026-04-02: PCP-016 — SSE broadcast code duplication fixed, broadcast_project_update() helper extracted
 - Overnight 2026-04-02: PCP-017b — Respond endpoint double-tap race fixed, atomic check-and-set in submit_response
 - Overnight 2026-04-02: PCP-018 — Hardcoded DATA_ROOT paths consolidated into backend/config.py, all files import from single source
+- 2026-04-04: AERS v1.0 (AERS-001 through AERS-012) — outcome reconciler, blocker registry, queue evaluator, checkpoint/resume, pattern recording, end-to-end tests, Known Issues auto-update
 
 ## Last Updated
 
-Date: 2026-04-03
-Verification Method: Overnight 2026-04-03 — PCP-016 follow-up: projects.py broadcast duplication eliminated, all imports validated
+Date: 2026-04-04
+Verification Method: AERS-012 context file updates — all AERS items completed and documented
