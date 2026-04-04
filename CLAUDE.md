@@ -171,3 +171,39 @@ not HOW. When you receive a prompt:
 ## Known Issues
 <!-- Auto-updated by AERS on blocker resolution. Do not remove this section. -->
 _No known issues at this time._
+
+
+## Paladin Orchestration
+
+This project is managed by the Paladin Control Plane (PCP).
+Dashboard: https://dashboard.paladinrobotics.com
+
+### Execution conventions
+- Print FINISHED WORK as your absolute last action — after all commits
+- Commit at each logical checkpoint during a task, not at the end
+- Use conventional commit format: type(scope): description [ckpt N]
+- Write blocker.json to the active task directory if you cannot proceed
+- Read context/AGENTS.md and context/STATUS.md at every session start
+- Update context/STATUS.md and context/WORKQUEUE.md before exiting
+
+### Blocker reporting
+If blocked, write ~/dev/queue/active/{task_name}/blocker.json:
+  type: one of github-auth, api-down, missing-credential, path-issue,
+        git-conflict, disk-full, service-crash, network-unreachable,
+        missing-dependency, permission-denied, trust-prompt, unknown
+  description: one sentence — what failed and why
+  fix_instructions: exact steps to resolve
+  resumable: true
+  checkpoint_commit: last commit hash before blocker, or null
+  completed_steps: list of steps already done
+  remaining_steps: list of steps still to do
+Then print FINISHED WORK and exit cleanly.
+
+### Context schema
+paladin-context-system v1.0
+Schema reference: ~/projects/paladin-context-system/SCHEMA.md
+Patterns library: ~/projects/paladin-context-system/patterns/
+
+### Known Issues
+<!-- Auto-updated by AERS on blocker resolution. Do not remove. -->
+_No known issues at this time._
