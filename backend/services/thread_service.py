@@ -16,6 +16,30 @@ from typing import Optional
 
 from backend.config import DATA_ROOT
 
+_Path = Path
+
+
+def _atomic_write(path: "_Path", content: str) -> None:
+    """Write content to path atomically using temp file + rename."""
+    import tempfile
+    dir_ = path.parent
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=dir_, delete=False,
+            suffix=".tmp", encoding="utf-8"
+        ) as tmp:
+            tmp.write(content)
+            tmp_path = _Path(tmp.name)
+        tmp_path.replace(path)
+    except Exception:
+        if tmp_path:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        raise
+
 
 def _project_dir(project_id: str) -> Path:
     d = DATA_ROOT / project_id
@@ -100,7 +124,7 @@ def _read_full_queue(project_id: str) -> list[dict]:
 def _write_queue(project_id: str, queue: list[dict]) -> None:
     """Write the full prompt queue to disk."""
     queue_file = _project_dir(project_id) / "prompt-queue.json"
-    queue_file.write_text(json.dumps(queue, indent=2) + "\n", encoding="utf-8")
+    _atomic_write(queue_file, json.dumps(queue, indent=2) + "\n")
 
 
 def add_prompt(project_id: str, content: str) -> dict:
@@ -190,7 +214,7 @@ def submit_response(
                 updated_lines.append(json.dumps(entry))
             except json.JSONDecodeError:
                 updated_lines.append(line)
-        thread_file.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+        _atomic_write(thread_file, "\n".join(updated_lines) + "\n")
 
     if already_responded:
         return None

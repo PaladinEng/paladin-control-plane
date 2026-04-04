@@ -3,7 +3,6 @@ Scans ~/projects/*/context/ directories to build project state.
 Results are cached for 30 seconds.
 """
 
-import os
 import re
 import time
 from pathlib import Path
@@ -11,7 +10,7 @@ from typing import Optional
 
 import yaml
 
-from backend.models.project import ProjectDetail, ProjectSummary
+from backend.models.project import ProjectDetail
 from backend.services.archive_service import is_archived
 
 PROJECTS_ROOT = Path.home() / "projects"

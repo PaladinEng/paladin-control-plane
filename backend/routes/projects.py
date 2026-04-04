@@ -2,7 +2,7 @@ import json
 import re
 import subprocess
 from datetime import date, datetime, timezone
-from pathlib import Path
+from pathlib import Path as _Path
 from typing import Optional
 
 import yaml
@@ -21,11 +21,25 @@ from backend.services.project_scanner import (
 )
 from backend.services.thread_service import add_prompt
 
+Path = _Path
+
 PALADIN_CONFIG_PATH = Path.home() / "projects" / ".paladin-config.yaml"
 UPLOADS_DIR = Path.home() / "paladin-control" / "data" / "uploads"
 CPO_PENDING = Path.home() / "dev" / "queue" / "pending"
 
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _safe_log_path(logs_dir: "_Path", filename: str) -> "_Path | None":
+    """Return resolved path only if it stays within logs_dir."""
+    if "/" in filename or "\\" in filename or "\x00" in filename:
+        return None
+    try:
+        resolved = (logs_dir / filename).resolve()
+        resolved.relative_to(logs_dir.resolve())
+        return resolved
+    except ValueError:
+        return None
 
 router = APIRouter(prefix="/api/projects")
 
@@ -384,7 +398,10 @@ async def download_log(project_id: str, filename: str):
     if not _LOG_FILENAME_RE.match(filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    log_path = Path(project.path) / "logs" / filename
+    logs_dir = Path(project.path) / "logs"
+    log_path = _safe_log_path(logs_dir, filename)
+    if log_path is None:
+        raise HTTPException(status_code=400, detail="Invalid filename")
     if not log_path.exists():
         raise HTTPException(status_code=404, detail="Log file not found")
 
