@@ -13,8 +13,8 @@ PASS=0
 FAIL=0
 
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-pass() { log "PASS: $*"; ((PASS++)); }
-fail() { log "FAIL: $*"; ((FAIL++)); }
+pass() { log "PASS: $*"; PASS=$((PASS+1)); }
+fail() { log "FAIL: $*"; FAIL=$((FAIL+1)); }
 
 submit_prompt() {
     local content="$1"
