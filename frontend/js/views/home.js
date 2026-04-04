@@ -8,6 +8,7 @@
 import { getProjects, getHealth, getAuthStatus, archiveProject, restoreProject, createProject, getSystemConfig, uploadBrief } from '../api.js';
 
 let sseRefreshHandler = null;
+let resizeHandler = null;
 
 function statusBadge(status) {
     const map = {
@@ -69,6 +70,97 @@ function escapeHtml(str) {
 
 function escapeAttr(str) {
     return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ============================================================
+// Sidebar — Desktop project list (>= 768px)
+// ============================================================
+
+export function renderSidebar(projects, activeProjectId) {
+    if (window.innerWidth < 768) {
+        // Remove sidebar projects if viewport dropped below desktop
+        const existing = document.querySelector('.sidebar-projects');
+        if (existing) existing.remove();
+        const existingBtn = document.querySelector('.sidebar-new-btn');
+        if (existingBtn) existingBtn.remove();
+        return;
+    }
+
+    if (!projects || projects.length === 0) return;
+
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+
+    // Create or update the sidebar projects container
+    let container = sidebar.querySelector('.sidebar-projects');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'sidebar-projects';
+        // Insert before nav-footer
+        const footer = sidebar.querySelector('.nav-footer');
+        if (footer) {
+            sidebar.insertBefore(container, footer);
+        } else {
+            sidebar.appendChild(container);
+        }
+    }
+
+    const active = projects.filter(p => !p.archived);
+
+    container.innerHTML = active.map(p => {
+        const dotClass = `sidebar-dot sidebar-dot-${(p.status || 'idle').replace(/\s+/g, '-')}`;
+        const isActive = p.id === activeProjectId ? ' active' : '';
+        return `<a class="sidebar-project${isActive}" data-project-id="${escapeAttr(p.id)}" href="#/project/${encodeURIComponent(p.id)}">
+            <span class="${dotClass}"></span>
+            <span class="sidebar-name">${escapeHtml(p.name)}</span>
+        </a>`;
+    }).join('');
+
+    // Add divider and new project button if not present
+    let newBtn = sidebar.querySelector('.sidebar-new-btn');
+    if (!newBtn) {
+        const footer = sidebar.querySelector('.nav-footer');
+        newBtn = document.createElement('button');
+        newBtn.className = 'sidebar-new-btn';
+        newBtn.textContent = '+ New project';
+        newBtn.type = 'button';
+        if (footer) {
+            sidebar.insertBefore(newBtn, footer);
+        } else {
+            sidebar.appendChild(newBtn);
+        }
+        newBtn.addEventListener('click', () => {
+            window.location.hash = '#/';
+            // Trigger new project form after navigation
+            setTimeout(() => {
+                const npBtn = document.getElementById('new-project-btn');
+                if (npBtn) npBtn.click();
+            }, 100);
+        });
+    }
+
+    // Wire project click handlers (for keyboard/click events on the anchors)
+    container.querySelectorAll('.sidebar-project').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.hash = `#/project/${encodeURIComponent(el.dataset.projectId)}`;
+        });
+    });
+}
+
+function setupResizeHandler() {
+    if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+    }
+    resizeHandler = () => {
+        if (window._cachedProjects) {
+            const route = window.location.hash || '#/';
+            const projectMatch = route.match(/^#\/project\/(.+)$/);
+            const activeId = projectMatch ? decodeURIComponent(projectMatch[1]) : null;
+            renderSidebar(window._cachedProjects, activeId);
+        }
+    };
+    window.addEventListener('resize', resizeHandler);
 }
 
 async function renderHealthBanner(container) {
@@ -374,6 +466,7 @@ export async function renderHome(content) {
         sseRefreshHandler = null;
     }
 
+    content.className = 'home-view';
     content.innerHTML = `
         <div class="page-header">
             <div style="display:flex;align-items:center;gap:12px">
@@ -411,6 +504,9 @@ export async function renderHome(content) {
     // Register SSE auto-refresh
     sseRefreshHandler = () => loadProjects();
     window.addEventListener('sse:event', sseRefreshHandler);
+
+    // Setup resize handler for sidebar
+    setupResizeHandler();
 }
 
 async function handleArchiveAction(e) {
@@ -446,6 +542,8 @@ async function loadProjects() {
 
     try {
         const projects = await getProjects();
+        window._cachedProjects = projects;
+        renderSidebar(projects);
 
         if (!projects || projects.length === 0) {
             container.innerHTML = `
@@ -526,4 +624,10 @@ export function cleanupHome() {
         window.removeEventListener('sse:event', sseRefreshHandler);
         sseRefreshHandler = null;
     }
+    if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+        resizeHandler = null;
+    }
+    const content = document.getElementById('content');
+    if (content) content.className = '';
 }

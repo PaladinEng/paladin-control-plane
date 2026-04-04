@@ -4,6 +4,7 @@
  */
 
 import { getProject, getThread, postPrompt, postResponse } from '../api.js';
+import { renderSidebar } from './home.js';
 
 let sseRefreshHandler = null;
 let sseThreadHandler = null;
@@ -447,6 +448,13 @@ export async function renderProject(content, projectId) {
         sseThreadHandler = null;
     }
 
+    content.className = 'project-view';
+
+    // Render sidebar with active project highlighted
+    if (window._cachedProjects) {
+        renderSidebar(window._cachedProjects, projectId);
+    }
+
     content.innerHTML = `
         <a href="#/" class="back-link">${backArrow()} Back to Dashboard</a>
         <div class="loading-container"><div class="spinner"></div></div>`;
@@ -820,4 +828,6 @@ export function cleanupProject() {
     }
     currentProjectId = null;
     threadEntryIds = new Set();
+    const content = document.getElementById('content');
+    if (content) content.className = '';
 }
