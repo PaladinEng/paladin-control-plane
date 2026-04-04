@@ -43,6 +43,11 @@ _retry_counts: dict[str, int] = {}  # project_id -> retry count
 _retry_delays = [0, 60, 120, 300, 600]  # seconds between retries (exponential backoff)
 _last_retry_time: dict[str, float] = {}  # project_id -> last retry timestamp
 
+# Guard against infinite retry loops for completed-then-hung prompts.
+# Once a prompt is classified as completed-then-hung, it must never be
+# re-queued regardless of whether mark_prompt_handled succeeded.
+_completed_hung_prompts: set[str] = set()
+
 # Configuration
 from backend.config import DATA_ROOT
 QUEUE_ROOT = Path.home() / "dev" / "queue" / "pending"
@@ -381,19 +386,47 @@ def hang_detector(cpo_active_dir: Path) -> None:
                             "marking prompt as handled to prevent retry",
                             task_dir.name,
                         )
+                        # Extract prompt_id and add to completed-hung guard
+                        prompt_id_suffix = task_dir.name.split("-")[-1]
                         # Mark the prompt as handled so supervisor doesn't retry
-                        try:
-                            queue = _read_full_queue(project_id)
-                            prompt_id_suffix = task_dir.name.split("-")[-1]
-                            for entry in queue:
-                                eid = entry.get("id", "")
-                                if eid.startswith(prompt_id_suffix) or \
-                                   eid.endswith(prompt_id_suffix):
-                                    entry["handled"] = True
-                                    logger.info("Marked prompt %s as handled", eid)
-                                    break
-                            _write_queue(project_id, queue)
+                        handled_ok = False
+                        for attempt in range(1, 4):
+                            try:
+                                queue = _read_full_queue(project_id)
+                                for entry in queue:
+                                    eid = entry.get("id", "")
+                                    if eid.startswith(prompt_id_suffix) or \
+                                       eid.endswith(prompt_id_suffix):
+                                        entry["handled"] = True
+                                        _completed_hung_prompts.add(eid)
+                                        logger.info(
+                                            "Prompt %s marked handled "
+                                            "(completed-then-hung) — "
+                                            "hang detector, attempt %d",
+                                            eid, attempt,
+                                        )
+                                        break
+                                _write_queue(project_id, queue)
+                                handled_ok = True
+                                break
+                            except Exception as e:
+                                logger.warning(
+                                    "Mark-handled attempt %d/3 failed: %s",
+                                    attempt, e,
+                                )
+                                if attempt < 3:
+                                    time.sleep(0.5)
 
+                        if not handled_ok:
+                            logger.error(
+                                "Failed to mark prompt handled after 3 "
+                                "attempts for %s", task_dir.name,
+                            )
+
+                        # Move to completed if still in failed
+                        _move_active_to_completed(task_dir.name)
+
+                        try:
                             add_thread_entry(
                                 project_id, "event", "system",
                                 f"Task {task_dir.name} completed work but hung on "
@@ -401,7 +434,7 @@ def hang_detector(cpo_active_dir: Path) -> None:
                                 f"Work committed — no retry needed.",
                             )
                         except Exception as e:
-                            logger.error("Failed to mark prompt handled: %s", e)
+                            logger.error("Failed to write thread entry: %s", e)
 
                         notify(
                             project_id,
@@ -571,6 +604,19 @@ def _find_task_dir(task_name: str) -> Path | None:
     return None
 
 
+def _move_active_to_completed(task_name: str) -> None:
+    """Move a task directory from active/ to completed/ if still there."""
+    active_path = Path.home() / "dev" / "queue" / "active" / task_name
+    completed_path = Path.home() / "dev" / "queue" / "completed" / task_name
+    if active_path.exists():
+        completed_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            active_path.rename(completed_path)
+            logger.info(f"Moved {task_name} from active/ to completed/")
+        except Exception as e:
+            logger.warning(f"Failed to move {task_name}: {e}")
+
+
 def reconcile_outcome(
     cpo_exit_success: bool,
     timed_out: bool,
@@ -593,10 +639,25 @@ def reconcile_outcome(
 
     if timed_out:
         if commit:
+            # Post-flight diagnostic: check which runner was used
+            handoff_script = (
+                Path.home() / "dev" / "projects" /
+                "codex-project-orchestrator" / "scripts" / "queue-handoff.sh"
+            )
+            has_coproc = False
+            if handoff_script.exists():
+                try:
+                    has_coproc = "coproc" in handoff_script.read_text()
+                except Exception:
+                    pass
+            runner_info = (
+                f"Runner: {handoff_script} "
+                f"({'coproc ✅' if has_coproc else 'pipeline ⚠️ — fix not applied'})"
+            )
             return (
                 "completed-then-hung",
-                f"Task completed and committed ({commit[:8]}) but process hung "
-                f"after completion. Auto-killed. No retry needed."
+                f"Task completed and committed ({commit[:8]}) but exit signal failed. "
+                f"{runner_info} No retry needed."
             )
         else:
             return (
@@ -1803,7 +1864,58 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
         ntfy_priority=priority,
     )
 
-    # Mark prompt handled for all completed* outcomes
+    # Handle completed-then-hung atomically — mark handled FIRST to
+    # prevent infinite retry loops if subsequent steps fail or race.
+    if outcome == "completed-then-hung":
+        # Fix 2: If we've already seen this prompt as completed-then-hung,
+        # force-mark it handled and skip all other processing.
+        if prompt_id in _completed_hung_prompts:
+            logger.warning(
+                f"Prompt {prompt_id[:8]} already classified as "
+                f"completed-then-hung on a prior cycle — force-marking handled"
+            )
+            try:
+                mark_prompt_handled(project_id, prompt_id)
+            except Exception as e:
+                logger.error(f"Force-mark failed for {prompt_id[:8]}: {e}")
+            return True
+
+        # Track this prompt so it can never be re-queued
+        _completed_hung_prompts.add(prompt_id)
+
+        # Fix 1: Mark handled FIRST with retry logic
+        handled_ok = False
+        for attempt in range(1, 4):
+            try:
+                mark_prompt_handled(project_id, prompt_id)
+                commit = _git_commit_since(project_path, task_start_time)
+                logger.info(
+                    f"Prompt {prompt_id[:8]} marked handled "
+                    f"(completed-then-hung) — "
+                    f"commit {commit[:8] if commit else 'none'} detected"
+                )
+                handled_ok = True
+                break
+            except Exception as e:
+                logger.warning(
+                    f"mark_prompt_handled attempt {attempt}/3 failed "
+                    f"for {prompt_id[:8]}: {e}"
+                )
+                if attempt < 3:
+                    time.sleep(0.5)
+
+        if not handled_ok:
+            logger.error(
+                f"Could not mark prompt {prompt_id[:8]} as handled "
+                f"after 3 attempts — prompt may be retried erroneously"
+            )
+
+        # Fix 3: Move active task to completed
+        _move_active_to_completed(task_id)
+
+        return True
+
+    # Mark prompt handled for other completed* outcomes
     if outcome.startswith("completed"):
         mark_prompt_handled(project_id, prompt_id)
 
