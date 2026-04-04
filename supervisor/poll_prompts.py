@@ -503,6 +503,111 @@ def _execute_cpo_task(project_id: str, task_name: str) -> str:
         return "failed"
 
 
+def _get_checkpoint_commits(project_path: str, since_timestamp: float,
+                            max_commits: int = 20) -> list[dict]:
+    """
+    Get commits made in project_path since a given Unix timestamp.
+    Returns list of {hash, subject, timestamp} dicts, oldest first.
+    """
+    try:
+        iso_since = datetime.fromtimestamp(since_timestamp, tz=timezone.utc).isoformat()
+        result = subprocess.run(
+            ["git", "log", f"--since={iso_since}", "--format=%H|%s|%ct",
+             "--reverse", f"-{max_commits}"],
+            capture_output=True, text=True,
+            cwd=project_path, timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        commits = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|", 2)
+            if len(parts) == 3:
+                commits.append({
+                    "hash": parts[0][:10],
+                    "subject": parts[1],
+                    "timestamp": float(parts[2]),
+                })
+        return commits
+    except Exception as e:
+        logger.warning("Failed to get checkpoint commits: %s", e)
+        return []
+
+
+def _get_prompt_first_attempt_time(prompt_id: str) -> float | None:
+    """
+    Find the creation time of the earliest task directory for this prompt
+    across completed/, failed/, and active/ queues.
+    """
+    cpo_root = Path.home() / "dev" / "queue"
+    earliest = None
+    suffix = prompt_id[:8]
+    for subdir in ["completed", "failed", "active"]:
+        try:
+            for task_dir in (cpo_root / subdir).iterdir():
+                if task_dir.name.endswith(suffix):
+                    status_file = task_dir / "status.json"
+                    if status_file.exists():
+                        status = json.loads(status_file.read_text())
+                        created = status.get("created")
+                        if created:
+                            ts = datetime.fromisoformat(created).timestamp()
+                            if earliest is None or ts < earliest:
+                                earliest = ts
+                    else:
+                        ts = task_dir.stat().st_mtime
+                        if earliest is None or ts < earliest:
+                            earliest = ts
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.warning("Error scanning %s for checkpoints: %s", subdir, e)
+    return earliest
+
+
+def _build_checkpoint_context(project_id: str, prompt_id: str,
+                              content: str) -> str:
+    """
+    Build a resume-from-checkpoint section if prior attempts exist.
+    Checks git history for commits made during previous attempts of the
+    same prompt, so the agent can skip already-completed steps.
+
+    Returns a markdown string to insert into task.md, or empty string
+    if this is the first attempt.
+    """
+    first_attempt = _get_prompt_first_attempt_time(prompt_id)
+    if first_attempt is None:
+        return ""
+
+    project_path = _get_project_path(project_id)
+    commits = _get_checkpoint_commits(project_path, first_attempt)
+
+    if not commits:
+        return ""
+
+    # Filter to commits that look related to this task
+    # (include all — the agent can judge relevance)
+    commit_lines = []
+    for c in commits:
+        commit_lines.append(f"  - `{c['hash']}` {c['subject']}")
+
+    retry_count = _get_retry_count(prompt_id)
+
+    section = (
+        f"\n## Resume from checkpoint\n\n"
+        f"This is attempt #{retry_count + 1} for this prompt. "
+        f"Previous attempt(s) made the following commits in this project:\n\n"
+        + "\n".join(commit_lines) + "\n\n"
+        f"**Before starting work**, review these commits with `git log` and "
+        f"`git diff` to understand what was already accomplished. "
+        f"Do NOT repeat work that is already committed. Pick up from where "
+        f"the previous attempt left off.\n\n"
+        f"If the previous commits fully satisfy the objective, skip to "
+        f"writing the thread.jsonl response and exiting.\n"
+    )
+    return section
+
+
 def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
     """Create a CPO task directory and return the task_id."""
     task_id = f"{project_id}-{prompt_id[:8]}"
@@ -512,6 +617,9 @@ def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
     project_path = _get_project_path(project_id)
     thread_jsonl = DATA_ROOT / project_id / "thread.jsonl"
 
+    # Build checkpoint context if this is a retry/resume
+    checkpoint_context = _build_checkpoint_context(project_id, prompt_id, content)
+
     # Write task.md with full objective and proper acceptance criteria
     task_md = f"""# Dashboard prompt — {project_id}
 
@@ -520,6 +628,28 @@ def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
 
 ## Objective
 {content}
+{checkpoint_context}
+## Checkpoint commits
+
+You MUST commit after each logical boundary during execution. This enables
+the supervisor to detect partial progress if the task is interrupted, and
+allows future retries to resume from the last checkpoint instead of
+repeating work.
+
+Rules:
+1. **Commit after each discrete step** — e.g. after adding a new file,
+   after updating a config, after fixing a test. Do not batch all changes
+   into one final commit.
+2. **Use descriptive commit messages** that state what was accomplished
+   in that step, prefixed with the task context:
+   `feat({project_id}): <what this step accomplished>`
+3. **Never leave uncommitted work** — if you are about to exit (success
+   or failure), commit whatever is in the working tree first.
+4. **On blocker or failure**, commit all completed work before stopping.
+   This ensures the next attempt can see what was already done via
+   `git log`.
+5. **Minimum one checkpoint** per task. Even if the task is small,
+   commit before writing the thread.jsonl response entry.
 
 ## Execution context
 You are Claude Code running autonomously via the Paladin Control Plane
@@ -903,6 +1033,159 @@ def _should_give_up(project_id: str, prompt_id: str) -> bool:
     return False
 
 
+def _get_next_executable_prompt(project_id: str) -> dict | None:
+    """
+    Return the next unhandled, unparked prompt for a project.
+    Returns None if no executable prompt exists.
+    """
+    queue = get_prompt_queue(project_id)  # returns unhandled prompts
+    for prompt in queue:
+        if prompt.get("parked"):
+            logger.info(
+                f"Skipping parked prompt {prompt['id'][:8]} "
+                f"(blocker: {prompt.get('parked_reason', 'unknown')})"
+            )
+            continue
+        return prompt
+    return None
+
+
+def _log_queue_state() -> None:
+    """Log current queue depth per project, noting parked counts."""
+    if not DATA_ROOT.exists():
+        return
+
+    for project_dir in sorted(DATA_ROOT.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        queue_file = project_dir / "prompt-queue.json"
+        if not queue_file.exists():
+            continue
+        try:
+            queue = json.loads(queue_file.read_text())
+            unhandled = [e for e in queue if not e.get("handled")]
+            parked = [e for e in unhandled if e.get("parked")]
+            executable = [e for e in unhandled if not e.get("parked")]
+            if unhandled:
+                logger.info(
+                    f"Queue {project_dir.name}: "
+                    f"{len(executable)} executable, "
+                    f"{len(parked)} parked"
+                )
+        except Exception:
+            pass
+
+
+def unpark_prompts_for_blocker(blocker_id: str) -> int:
+    """
+    Unpark all prompts that were parked for the given blocker_id.
+    Returns count of prompts unparked.
+    """
+    total_unparked = 0
+
+    if not DATA_ROOT.exists():
+        return 0
+
+    for project_dir in sorted(DATA_ROOT.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        queue_file = project_dir / "prompt-queue.json"
+        if not queue_file.exists():
+            continue
+
+        project_id = project_dir.name
+        queue = _read_full_queue(project_id)
+        changed = False
+
+        for entry in queue:
+            if (entry.get("parked") and
+                    entry.get("parked_blocker_id") == blocker_id):
+                entry["parked"] = False
+                entry.pop("parked_reason", None)
+                entry.pop("parked_blocker_id", None)
+                entry.pop("parked_at", None)
+                changed = True
+                total_unparked += 1
+                logger.info(
+                    f"Unparked prompt {entry['id'][:8]} "
+                    f"in {project_id}"
+                )
+
+        if changed:
+            _write_queue(project_id, queue)
+
+    return total_unparked
+
+
+def resolve_blocker_from_response(
+    project_id: str, blocker_id: str, response_text: str
+) -> None:
+    """
+    Process a user response that resolves a blocker.
+    Updates registry, unparks prompts, sends notification.
+    """
+    if blocker_id not in _active_blockers:
+        logger.info(f"Blocker {blocker_id} not in active registry — may already be resolved")
+        return
+
+    blocker_data = _active_blockers[blocker_id]
+    blocker_type = blocker_data["type"]
+
+    # Mark blocker as resolved
+    _active_blockers[blocker_id]["status"] = "resolved"
+    _active_blockers[blocker_id]["resolved_at"] = time.time()
+    _active_blockers[blocker_id]["resolution"] = response_text
+
+    # Write resolution to patterns library
+    _record_resolution_in_patterns(blocker_type, project_id, response_text)
+
+    # Unpark affected prompts
+    count = unpark_prompts_for_blocker(blocker_id)
+
+    # Notify
+    notify(
+        project_id,
+        f"Blocker {blocker_type} resolved. {count} task(s) unparked and queued.",
+        ntfy_title=f"▶️ [{project_id}] Blocker cleared — {count} tasks resuming",
+        ntfy_tags="arrow_forward",
+        ntfy_priority="default",
+    )
+
+    logger.info(
+        f"Blocker {blocker_id} resolved. {count} prompts unparked."
+    )
+
+
+def _record_resolution_in_patterns(
+    blocker_type: str, project_id: str, resolution: str
+) -> None:
+    """Append resolution to the pattern file for this blocker type."""
+    import datetime
+
+    pattern_file = PATTERNS_DIR / f"{blocker_type}.md"
+    if not pattern_file.exists():
+        pattern_file = PATTERNS_DIR / "unknown.md"
+
+    try:
+        content = pattern_file.read_text(encoding="utf-8")
+        date = datetime.date.today().isoformat()
+        entry = (
+            f"\n### {date} — {project_id}\n"
+            f"Resolution: {resolution}\n"
+        )
+        # Append to Resolution History section
+        if "## Resolution History" in content:
+            content = content.replace(
+                "(populated automatically by supervisor)",
+                f"(populated automatically by supervisor){entry}"
+            )
+        else:
+            content += f"\n## Resolution History{entry}"
+        pattern_file.write_text(content, encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Failed to record resolution in patterns: {e}")
+
+
 def process_prompt(project_id: str, prompt: dict) -> bool:
     """Process a single unhandled prompt. Returns True if executed, False if deferred."""
     prompt_id = prompt["id"]
@@ -975,7 +1258,7 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
     return True
 
 
-def poll_once() -> int:
+def poll_once(cycle_count: int = 0) -> int:
     """Scan all project prompt queues. Process at most ONE prompt per cycle.
     Returns count of prompts processed (0 or 1)."""
     if not DATA_ROOT.exists():
@@ -986,7 +1269,11 @@ def poll_once() -> int:
     if cleaned > 0:
         logger.info("Cleaned up %d orphaned pending task(s)", cleaned)
 
-    # Collect all unhandled prompts across all projects
+    # Log queue state every 2 cycles (~1 minute)
+    if cycle_count % 2 == 0:
+        _log_queue_state()
+
+    # Collect next executable (non-parked) prompt per project
     all_prompts: list[tuple[str, dict]] = []
     for project_dir in sorted(DATA_ROOT.iterdir()):
         if not project_dir.is_dir():
@@ -997,8 +1284,8 @@ def poll_once() -> int:
             logger.warning("Skipping invalid project_id: %s", project_id)
             continue
         try:
-            prompts = get_prompt_queue(project_id)
-            for prompt in prompts:
+            prompt = _get_next_executable_prompt(project_id)
+            if prompt is not None:
                 all_prompts.append((project_id, prompt))
         except Exception as e:
             logger.error("Error reading queue for %s: %s", project_id, e)
@@ -1048,7 +1335,7 @@ def main() -> None:
                 cycle_count,
                 os.getpid(),
             )
-            count = poll_once()
+            count = poll_once(cycle_count)
             if count > 0:
                 logger.info("Poll cycle complete: processed %d prompt(s)", count)
             time.sleep(POLL_INTERVAL)

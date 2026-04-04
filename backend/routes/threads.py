@@ -7,6 +7,7 @@ POST /api/projects/{id}/prompts/batch  — submit multiple prompts
 POST /api/projects/{id}/prompts/upload — upload .md/.txt file of prompts
 """
 
+import logging
 import re
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 
 from backend.routes.events import broadcast_project_update
 from backend.utils.prompt_parser import parse_prompts
+
+logger = logging.getLogger(__name__)
 
 _SLUG_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -87,6 +90,16 @@ async def submit_response_endpoint(
     # Invalidate project scanner cache so status updates
     from backend.services.project_scanner import invalidate_cache
     invalidate_cache()
+
+    # Check if this response resolves a blocker
+    if pending.get("task_id") and pending["task_id"].startswith("blocker-"):
+        try:
+            from supervisor.poll_prompts import resolve_blocker_from_response
+            resolve_blocker_from_response(
+                project_id, pending["task_id"], body.content.strip()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to resolve blocker from response: {e}")
 
     broadcast_project_update(project_id, "thread_update", "status_update")
 
