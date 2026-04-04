@@ -116,6 +116,36 @@ def _reload_handler(signum, frame):
 signal.signal(signal.SIGHUP, _reload_handler)
 
 
+def _check_anthropic_status() -> tuple[bool, str]:
+    """
+    Check Anthropic API status page.
+    Returns (is_healthy, description).
+    is_healthy is True only when indicator is 'none'.
+    """
+    import urllib.request
+    import urllib.error
+
+    try:
+        with urllib.request.urlopen(
+            "https://status.anthropic.com/api/v2/status.json",
+            timeout=10
+        ) as resp:
+            data = json.loads(resp.read())
+            indicator = data.get("status", {}).get("indicator", "unknown")
+            description = data.get("status", {}).get("description", "Unknown")
+            is_healthy = indicator == "none"
+            if not is_healthy:
+                logger.warning(
+                    f"Anthropic status: {indicator} — {description}"
+                )
+            return is_healthy, description
+    except Exception as e:
+        logger.warning(f"Could not reach Anthropic status page: {e}")
+        # If we can't reach the status page, assume healthy and proceed
+        # (the task itself will fail if API is truly down)
+        return True, "Status page unreachable"
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -601,6 +631,16 @@ def reconcile_outcome(
             "completed-exit-signal-failed",
             f"Task completed and committed ({commit[:8]}) but exit signal failed. "
             f"This is a known issue — no action needed."
+        )
+
+    # Before classifying as failed, check if a service issue explains
+    # the empty output
+    is_healthy, status_desc = _check_anthropic_status()
+    if not is_healthy:
+        return (
+            "service-degraded",
+            f"Task produced no output — Anthropic API degraded "
+            f"({status_desc}). Prompt parked for retry when service recovers."
         )
 
     return (
@@ -1591,6 +1631,53 @@ def _update_project_claude_md(
         logger.warning(f"Failed to update CLAUDE.md for {project_id}: {e}")
 
 
+def _check_service_degraded_recovery() -> None:
+    """
+    Auto-unpark prompts parked for service-degraded if Anthropic
+    status has recovered.
+    """
+    has_parked = False
+
+    if not DATA_ROOT.exists():
+        return
+
+    for project_dir in DATA_ROOT.iterdir():
+        if not project_dir.is_dir():
+            continue
+        queue_file = project_dir / "prompt-queue.json"
+        if not queue_file.exists():
+            continue
+        try:
+            queue = json.loads(queue_file.read_text())
+        except Exception:
+            continue
+        if any(
+            e.get("parked") and
+            e.get("parked_reason") == "service-degraded"
+            for e in queue
+        ):
+            has_parked = True
+            break
+
+    if not has_parked:
+        return
+
+    # Check status
+    is_healthy, description = _check_anthropic_status()
+    if is_healthy:
+        logger.info("Anthropic service recovered — unparking service-degraded prompts")
+        count = unpark_prompts_for_blocker("service-degraded")
+        if count:
+            notify(
+                "paladin-control-plane",
+                f"Anthropic service recovered. {count} parked prompt(s) "
+                f"resuming automatically.",
+                ntfy_title="▶️ Service recovered — prompts resuming",
+                ntfy_tags="white_check_mark",
+                ntfy_priority="default",
+            )
+
+
 def process_prompt(project_id: str, prompt: dict) -> bool:
     """Process a single unhandled prompt. Returns True if executed, False if deferred."""
     prompt_id = prompt["id"]
@@ -1610,6 +1697,30 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
             prompt_id[:8],
         )
         return False
+
+    # Pre-flight: check Anthropic API status before executing
+    is_healthy, description = _check_anthropic_status()
+    if not is_healthy:
+        logger.warning(
+            f"Anthropic service degraded — parking prompt {prompt_id[:8]}"
+        )
+        _park_prompt(project_id, "service-degraded", "service-degraded")
+        notify(
+            project_id,
+            f"Prompt {prompt_id[:8]} parked: Anthropic service degraded "
+            f"({description}). Will resume when service recovers.",
+            ntfy_title=f"⏸️ [{project_id}] Service degraded",
+            ntfy_tags="warning",
+            ntfy_priority="high",
+        )
+        add_thread_entry(
+            project_id,
+            "event",
+            "system",
+            f"⏸️ Prompt parked: Anthropic API degraded ({description}). "
+            f"Check https://status.anthropic.com — will auto-recover when resolved.",
+        )
+        return False  # defer to next cycle
 
     # Create CPO task
     task_id = _create_cpo_task(project_id, prompt_id, content)
@@ -1670,6 +1781,7 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
         "failed": ("\u274c", "x", "high"),
         "completed-then-hung": ("\u2705", "white_check_mark", "default"),
         "failed-timeout": ("\u274c", "timer_clock", "high"),
+        "service-degraded": ("\u23f8\ufe0f", "warning", "high"),
     }
     prefix, tags, priority = outcome_config.get(
         outcome, ("\u2753", "question", "default")
@@ -1694,6 +1806,19 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
             handle_blocker(project_id, blocker, task_id)
         mark_prompt_handled(project_id, prompt_id)
 
+    # Handle service-degraded — park the prompt for auto-recovery
+    if outcome == "service-degraded":
+        _park_prompt(project_id, "service-degraded", "service-degraded")
+        add_thread_entry(
+            project_id,
+            "event",
+            "system",
+            f"⏸️ Prompt parked: Anthropic API degraded. "
+            f"Will auto-recover when service returns to normal.",
+        )
+        # Don't mark handled — leave for auto-recovery to unpark and retry
+        return True
+
     # "failed" and "failed-timeout" are retry-eligible — leave unhandled
 
     return True
@@ -1704,6 +1829,9 @@ def poll_once(cycle_count: int = 0) -> int:
     Returns count of prompts processed (0 or 1)."""
     if not DATA_ROOT.exists():
         return 0
+
+    # Check if service-degraded prompts can be unparked
+    _check_service_degraded_recovery()
 
     # Clean up orphaned pending tasks from premature handling
     cleaned = _cleanup_orphaned_pending()
