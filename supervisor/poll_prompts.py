@@ -626,6 +626,22 @@ def _create_cpo_task(project_id: str, prompt_id: str, content: str) -> str:
 ## Project path
 {project_path}
 
+## Session Resume
+
+Before starting work, check for a blocker.json file in the task directory
+(the directory containing this task.md). If it exists, read it:
+
+- **checkpoint_commit**: A git commit hash where previous work stopped.
+  Run `git log --oneline <hash>..HEAD` to see what was done after that
+  commit, then pick up from where the previous attempt left off.
+  Do NOT repeat already-committed work.
+- **completed_steps**: A list of steps already finished. Skip these.
+- **remaining_steps**: Steps still to do. Start here.
+- **blocker_type / description**: Why the previous attempt stopped.
+  Check if the blocker has been resolved before proceeding.
+
+If blocker.json does not exist, this is a fresh run — proceed normally.
+
 ## Objective
 {content}
 {checkpoint_context}
@@ -647,7 +663,10 @@ Rules:
    or failure), commit whatever is in the working tree first.
 4. **On blocker or failure**, commit all completed work before stopping.
    This ensures the next attempt can see what was already done via
-   `git log`.
+   `git log`. Also write a blocker.json to the task directory with:
+   `{{"checkpoint_commit": "<last-commit-hash>", "blocker_type": "<type>",
+     "description": "<what went wrong>",
+     "completed_steps": [...], "remaining_steps": [...]}}`
 5. **Minimum one checkpoint** per task. Even if the task is small,
    commit before writing the thread.jsonl response entry.
 

@@ -151,11 +151,52 @@ def create_cpo_task(task: dict) -> Path:
 ## Project path
 {project_path}
 
+## Session Resume
+
+Before starting work, check for a blocker.json file in the task directory
+(the directory containing this task.md). If it exists, read it:
+
+- **checkpoint_commit**: A git commit hash where previous work stopped.
+  Run `git log --oneline <hash>..HEAD` to see what was done after that
+  commit, then pick up from where the previous attempt left off.
+  Do NOT repeat already-committed work.
+- **completed_steps**: A list of steps already finished. Skip these.
+- **remaining_steps**: Steps still to do. Start here.
+- **blocker_type / description**: Why the previous attempt stopped.
+  Check if the blocker has been resolved before proceeding.
+
+If blocker.json does not exist, this is a fresh run — proceed normally.
+
 ## Objective
 Execute this overnight task: {task['title']}
 
 Task details from WORKQUEUE-MASTER.md:
 {task['body']}
+
+## Checkpoint commits
+
+You MUST commit after each logical boundary during execution. This enables
+the supervisor to detect partial progress if the task is interrupted, and
+allows future retries to resume from the last checkpoint instead of
+repeating work.
+
+Rules:
+1. **Commit after each discrete step** — e.g. after adding a new file,
+   after updating a config, after fixing a test. Do not batch all changes
+   into one final commit.
+2. **Use descriptive commit messages** that state what was accomplished
+   in that step, prefixed with the task context:
+   `feat({task['project_id']}): <what this step accomplished>`
+3. **Never leave uncommitted work** — if you are about to exit (success
+   or failure), commit whatever is in the working tree first.
+4. **On blocker or failure**, commit all completed work before stopping.
+   This ensures the next attempt can see what was already done via
+   `git log`. Also write a blocker.json to the task directory with:
+   `{{"checkpoint_commit": "<last-commit-hash>", "blocker_type": "<type>",
+     "description": "<what went wrong>",
+     "completed_steps": [...], "remaining_steps": [...]}}`
+5. **Minimum one checkpoint** per task. Even if the task is small,
+   commit before writing the thread.jsonl response entry.
 
 ## Execution context
 You are Claude Code running as part of the Paladin overnight automation.
