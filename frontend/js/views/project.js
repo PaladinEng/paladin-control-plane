@@ -188,11 +188,14 @@ function renderTaskList(tasks) {
 
 function renderSessions(sessions, projectId) {
     if (!sessions || sessions.length === 0) {
-        return '<p class="text-muted" style="font-size:13px">No session logs found.</p>';
+        return '<p class="text-muted" style="font-size:13px">No logs found.</p>';
     }
     const items = sessions.map(s => {
         const filename = typeof s === 'string' ? s : s.filename;
         const size = s.size ? ` (${Math.round(s.size / 1024)}kb)` : '';
+        const logType = s.type || (filename.startsWith('prompt-') ? 'prompt' : 'session');
+        const badgeLabel = logType === 'prompt' ? 'prompt' : 'session';
+        const badgeClass = logType === 'prompt' ? 'log-badge-prompt' : 'log-badge-session';
         return `
         <li class="session-item">
             ${docIcon()}
@@ -202,6 +205,7 @@ function renderSessions(sessions, projectId) {
                target="_blank">
                 ${escapeHtml(filename)}
             </a>
+            <span class="log-badge ${badgeClass}">${badgeLabel}</span>
             <span class="session-size">${escapeHtml(size)}</span>
         </li>`;
     }).join('');

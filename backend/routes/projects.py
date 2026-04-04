@@ -332,7 +332,7 @@ async def add_workqueue_task(project_id: str, body: AddTaskRequest):
     }
 
 
-_LOG_FILENAME_RE = re.compile(r"^session-[\w\-\.]+\.md$")
+_LOG_FILENAME_RE = re.compile(r"^(session|prompt)-[\w\-\.]+\.md$")
 
 
 @router.get("/{project_id}/logs")
@@ -347,12 +347,29 @@ async def list_logs(project_id: str):
     if not logs_dir.exists():
         return []
 
-    log_files = sorted(
-        [f.name for f in logs_dir.iterdir()
-         if f.name.endswith(".md") and f.name.startswith("session-")],
-        reverse=True,
-    )
-    return [{"filename": f, "size": (logs_dir / f).stat().st_size} for f in log_files]
+    logs = []
+
+    # Session logs
+    for f in sorted(logs_dir.glob("session-*.md"), reverse=True):
+        logs.append({
+            "filename": f.name,
+            "type": "session",
+            "size": f.stat().st_size,
+            "modified": f.stat().st_mtime,
+        })
+
+    # Prompt execution logs
+    for f in sorted(logs_dir.glob("prompt-*.md"), reverse=True)[:50]:
+        logs.append({
+            "filename": f.name,
+            "type": "prompt",
+            "size": f.stat().st_size,
+            "modified": f.stat().st_mtime,
+        })
+
+    # Sort all logs by modified time, newest first
+    logs.sort(key=lambda x: x["modified"], reverse=True)
+    return logs
 
 
 @router.get("/{project_id}/logs/{filename}")

@@ -609,6 +609,64 @@ def reconcile_outcome(
     )
 
 
+def _write_prompt_log(
+    project_id: str,
+    prompt_id: str,
+    prompt_content: str,
+    task_name: str,
+    task_start_time: str,
+    outcome: str,
+    human_message: str,
+    project_path: str,
+) -> Path | None:
+    """Write a structured execution log for a completed prompt."""
+    import datetime
+    import glob as _glob
+
+    logs_dir = Path.home() / "projects" / project_id / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y%m%d-%H%M%S"
+    )
+    log_path = logs_dir / f"prompt-{timestamp}-{prompt_id[:8]}.md"
+
+    commit = _git_commit_since(project_path, task_start_time) or "none"
+
+    cpo_pattern = str(
+        Path.home() / "dev" / "logs" / f"*{task_name}*"
+    )
+    cpo_logs = _glob.glob(cpo_pattern)
+    cpo_ref = cpo_logs[0] if cpo_logs else "not found"
+
+    content = f"""# Prompt Execution Log
+project: {project_id}
+prompt_id: {prompt_id}
+task: {task_name}
+started: {task_start_time}
+outcome: {outcome}
+
+## Prompt
+{prompt_content}
+
+## Result
+{human_message}
+
+## Git Commit
+{commit}
+
+## CPO Log
+{cpo_ref}
+"""
+    try:
+        log_path.write_text(content, encoding="utf-8")
+        logger.info(f"Prompt log written: {log_path.name}")
+        return log_path
+    except Exception as e:
+        logger.warning(f"Failed to write prompt log: {e}")
+        return None
+
+
 def _get_checkpoint_commits(project_path: str, since_timestamp: float,
                             max_commits: int = 20) -> list[dict]:
     """
@@ -1590,6 +1648,19 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
 
     logger.info("Task %s outcome: %s", task_id, outcome)
 
+    # Write per-prompt execution log
+    log_path = _write_prompt_log(
+        project_id=project_id,
+        prompt_id=prompt_id,
+        prompt_content=content,
+        task_name=task_id,
+        task_start_time=task_start_time,
+        outcome=outcome,
+        human_message=human_message,
+        project_path=project_path,
+    )
+    log_note = f" Log: {log_path.name}" if log_path else ""
+
     # Outcome-specific notification prefixes and handling
     outcome_config = {
         "completed": ("\u2705", "white_check_mark", "default"),
@@ -1606,7 +1677,7 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
 
     notify(
         project_id,
-        f"{prefix} {human_message}",
+        f"{prefix} {human_message}{log_note}",
         ntfy_title=f"{prefix} [{project_id}] Task {outcome}",
         ntfy_tags=tags,
         ntfy_priority=priority,
