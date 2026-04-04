@@ -8,6 +8,7 @@
 import { getProjects, getHealth, getAuthStatus, archiveProject, restoreProject, createProject, getSystemConfig, uploadBrief } from '../api.js';
 
 let sseRefreshHandler = null;
+let resizeHandler = null;
 
 function statusBadge(status) {
     const map = {
