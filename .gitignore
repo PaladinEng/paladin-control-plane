@@ -11,3 +11,6 @@ logs/overnight.log
 logs/supervisor.log
 logs/verification-*.md
 *.docx
+logs/session-*.md
+logs/smoke-test-*.md
+logs/aers-comprehensive-test-*.md
