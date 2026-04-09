@@ -198,6 +198,47 @@ Rules:
 5. **Minimum one checkpoint** per task. Even if the task is small,
    commit before writing the thread.jsonl response entry.
 
+## Execution Evidence
+
+For each major phase of this task, record the literal command run
+and its literal output in the task directory execution.md file.
+Do not paraphrase — paste the actual text.
+
+Format:
+### Phase: [description]
+Command: [exact command run]
+Output:
+[exact output, trimmed to relevant lines]
+Result: PASS / FAIL / PARTIAL
+
+This makes execution.md an auditable record, not a summary.
+
+## Verification Script (infrastructure tasks only)
+
+If this task modifies external systems (SSH commands, package installs,
+service changes, network configuration, storage operations), write a
+standalone verification shell script to the project logs directory
+before exiting.
+
+Script path: ~/projects/{task['project_id']}/logs/verify-{task_id[:8]}.sh
+
+The script must:
+- Be independently runnable by the operator with no additional context
+- Contain only read-only commands (no modifications)
+- Verify each major outcome of the task
+- Print PASS or FAIL for each check
+
+Example for a service install task:
+#!/usr/bin/env bash
+echo "=== Verification: myservice install ==="
+ssh user@10.1.10.245 'dpkg -l mypackage | grep ^ii' \\
+  && echo "PASS: package installed" || echo "FAIL: package not found"
+ssh user@10.1.10.245 'systemctl is-active myservice' \\
+  && echo "PASS: service active" || echo "FAIL: service not running"
+
+Commit the verification script to the project repo if it exists.
+If this task does not modify external systems, skip this section.
+
 ## Blocker Reporting
 
 If you encounter an error you cannot resolve autonomously, do NOT just fail.
@@ -236,7 +277,18 @@ When complete:
 1. Update the project WORKQUEUE.md: mark this task complete with today's date
 2. Update context/STATUS.md with current state
 3. Commit all changes
-4. Write a summary to {thread_jsonl} as a response entry
+4. Write a summary to {thread_jsonl} as a response entry.
+   The content field must end with a "Spot-check:" section containing
+   the exact copy-pasteable commands the operator can run right now to
+   independently verify the key outcomes. Example:
+
+   Spot-check:
+     ssh paladinrobotics@10.1.10.245 'systemctl is-active myservice'
+     curl -s http://10.1.10.50:8080/health
+
+   These commands must be runnable without any additional context.
+   Do not include commands that require reading log files or files
+   written during the task — only commands that verify external state.
 5. Exit cleanly.
 
 ## Constraints

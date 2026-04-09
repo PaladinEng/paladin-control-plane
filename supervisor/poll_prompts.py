@@ -617,6 +617,24 @@ def _move_active_to_completed(task_name: str) -> None:
             logger.warning(f"Failed to move {task_name}: {e}")
 
 
+def _extract_spot_check(cpo_log_path: str) -> str:
+    """
+    Extract the Spot-check section from a CPO execution log.
+    Returns empty string if not found.
+    """
+    try:
+        text = Path(cpo_log_path).read_text(encoding="utf-8")
+        # Find the last occurrence of "Spot-check:" in the log
+        idx = text.rfind("Spot-check:")
+        if idx == -1:
+            return ""
+        # Extract from Spot-check: to end of that block
+        snippet = text[idx:idx + 500].split("\n\n")[0]
+        return "\n\n" + snippet.strip()
+    except Exception:
+        return ""
+
+
 def reconcile_outcome(
     cpo_exit_success: bool,
     timed_out: bool,
@@ -943,6 +961,47 @@ Rules:
 5. **Minimum one checkpoint** per task. Even if the task is small,
    commit before writing the thread.jsonl response entry.
 
+## Execution Evidence
+
+For each major phase of this task, record the literal command run
+and its literal output in the task directory execution.md file.
+Do not paraphrase — paste the actual text.
+
+Format:
+### Phase: [description]
+Command: [exact command run]
+Output:
+[exact output, trimmed to relevant lines]
+Result: PASS / FAIL / PARTIAL
+
+This makes execution.md an auditable record, not a summary.
+
+## Verification Script (infrastructure tasks only)
+
+If this task modifies external systems (SSH commands, package installs,
+service changes, network configuration, storage operations), write a
+standalone verification shell script to the project logs directory
+before exiting.
+
+Script path: ~/projects/{project_id}/logs/verify-{task_id[:8]}.sh
+
+The script must:
+- Be independently runnable by the operator with no additional context
+- Contain only read-only commands (no modifications)
+- Verify each major outcome of the task
+- Print PASS or FAIL for each check
+
+Example for a service install task:
+#!/usr/bin/env bash
+echo "=== Verification: myservice install ==="
+ssh user@10.1.10.245 'dpkg -l mypackage | grep ^ii' \\
+  && echo "PASS: package installed" || echo "FAIL: package not found"
+ssh user@10.1.10.245 'systemctl is-active myservice' \\
+  && echo "PASS: service active" || echo "FAIL: service not running"
+
+Commit the verification script to the project repo if it exists.
+If this task does not modify external systems, skip this section.
+
 ## Blocker Reporting
 
 If you encounter an error you cannot resolve autonomously, do NOT just fail.
@@ -1001,6 +1060,19 @@ as a JSON entry: {{"id": "<uuid>", "timestamp": "<iso>", "type": "response",
 "author": "supervisor", "project_id": "{project_id}",
 "content": "<summary of what was accomplished>"}}
 Append this as a single line to the file.
+
+The content field must end with a "Spot-check:" section containing
+the exact copy-pasteable commands the operator can run right now to
+independently verify the key outcomes. Example:
+
+Spot-check:
+  ssh paladinrobotics@10.1.10.245 'systemctl is-active myservice'
+  curl -s http://10.1.10.50:8080/health
+
+These commands must be runnable without any additional context.
+Do not include commands that require reading log files or files
+written during the task — only commands that verify external state.
+
 Exit cleanly.
 
 ## Constraints
@@ -1827,6 +1899,16 @@ def process_prompt(project_id: str, prompt: dict) -> bool:
     )
 
     logger.info("Task %s outcome: %s", task_id, outcome)
+
+    # Extract spot-check commands from CPO execution log
+    import glob as _glob_mod
+    cpo_log_pattern = str(Path.home() / "dev" / "logs" / f"*{task_id}*")
+    cpo_log_matches = _glob_mod.glob(cpo_log_pattern)
+    if cpo_log_matches:
+        spot_check = _extract_spot_check(cpo_log_matches[0])
+        if spot_check:
+            human_message += spot_check
+            logger.info("Appended spot-check commands from CPO log")
 
     # Write per-prompt execution log
     log_path = _write_prompt_log(
